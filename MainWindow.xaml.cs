@@ -95,7 +95,7 @@ namespace StaticCodeAnalyzer
         {
             if (string.IsNullOrEmpty(_currentPath))
             {
-                MessageBox.Show("Сначала откройте файл или папку.", "Нет данных.", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("Сначала откройте файл или папку.", "Нет данных", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
@@ -119,12 +119,49 @@ namespace StaticCodeAnalyzer
                 await SaveAnalysisResultsToDbAsync(issues, _currentPath, _isFolder);
 
                 ResultsGrid.ItemsSource = _currentIssues;
-                StatusText.Text = $"Анализ завершён - найдено {issues.Count} проблем";
+                StatusText.Text = $"Анализ завершён. Найдено {issues.Count} проблем.";
             }
             catch (Exception ex)
             {
                 MessageBox.Show($"Ошибка при анализе: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
-                StatusText.Text = "Анализ не удался";
+                StatusText.Text = "Анализ не удался.";
+            }
+            finally
+            {
+                Mouse.OverrideCursor = null;
+            }
+        }
+
+        private async void PasteCode_Click(object sender, RoutedEventArgs e)
+        {
+            var inputWindow = new CodeInputWindow();
+            inputWindow.Owner = this;
+            inputWindow.ShowDialog();
+
+            if (!inputWindow.IsAnalyze || string.IsNullOrWhiteSpace(inputWindow.EnteredCode))
+                return;
+
+            StatusText.Text = "Анализ вставленного кода...";
+            Mouse.OverrideCursor = Cursors.Wait;
+            try
+            {
+                string tempFile = Path.GetTempFileName() + ".cs";
+                await File.WriteAllTextAsync(tempFile, inputWindow.EnteredCode);
+
+                var issues = await Task.Run(() => _analysisService.AnalyzeFiles(new List<string> { tempFile }));
+                _currentIssues = issues;
+
+                await SaveAnalysisResultsToDbAsync(issues, tempFile, false);
+
+                ResultsGrid.ItemsSource = _currentIssues;
+                StatusText.Text = $"Анализ завершён. Найдено {issues.Count} проблем.";
+
+                try { File.Delete(tempFile); } catch { }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Ошибка при анализе: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+                StatusText.Text = "Анализ не удался.";
             }
             finally
             {
@@ -179,7 +216,7 @@ namespace StaticCodeAnalyzer
             FilesTreeView.Items.Clear();
             _currentPath = null;
             _isFolder = false;
-            StatusText.Text = "Очищено";
+            StatusText.Text = "Очищено.";
         }
 
         private void ToggleTreePanel_Checked(object sender, RoutedEventArgs e)
