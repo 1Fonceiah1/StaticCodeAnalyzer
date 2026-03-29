@@ -29,6 +29,9 @@ namespace StaticCodeAnalyzer
             _repository = new Repository(new AppDbContext());
             _currentIssues = new List<AnalysisIssue>();
             this.Closing += MainWindow_Closing;
+
+            // Логируем запуск приложения
+            Logger.Log("AppStart", "Приложение запущено");
         }
 
         private async void OpenFile_Click(object sender, RoutedEventArgs e)
@@ -41,6 +44,7 @@ namespace StaticCodeAnalyzer
                 _isFolder = false;
                 await LoadFileTreeAsync(_currentPath);
                 StatusText.Text = $"Загружен файл: {Path.GetFileName(_currentPath)}";
+                Logger.Log("OpenFile", $"Путь: {_currentPath}");
             }
         }
 
@@ -53,6 +57,7 @@ namespace StaticCodeAnalyzer
                 _isFolder = true;
                 await LoadFolderTreeAsync(_currentPath);
                 StatusText.Text = $"Загружена папка: {_currentPath}";
+                Logger.Log("OpenFolder", $"Путь: {_currentPath}");
             }
         }
 
@@ -101,6 +106,8 @@ namespace StaticCodeAnalyzer
 
             StatusText.Text = "Анализ...";
             Mouse.OverrideCursor = Cursors.Wait;
+            Logger.Log("AnalyzeStart", $"Объект: {_currentPath}");
+
             try
             {
                 List<string> filesToAnalyze = new List<string>();
@@ -120,11 +127,13 @@ namespace StaticCodeAnalyzer
 
                 ResultsGrid.ItemsSource = _currentIssues;
                 StatusText.Text = $"Анализ завершён. Найдено {issues.Count} проблем.";
+                Logger.Log("AnalyzeEnd", $"Найдено проблем: {issues.Count}");
             }
             catch (Exception ex)
             {
                 MessageBox.Show($"Ошибка при анализе: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
                 StatusText.Text = "Анализ не удался.";
+                Logger.Log("AnalyzeError", ex.Message);
             }
             finally
             {
@@ -143,6 +152,8 @@ namespace StaticCodeAnalyzer
 
             StatusText.Text = "Анализ вставленного кода...";
             Mouse.OverrideCursor = Cursors.Wait;
+            Logger.Log("PasteCodeStart", "Начало анализа вставленного кода");
+
             try
             {
                 string tempFile = Path.GetTempFileName() + ".cs";
@@ -155,6 +166,7 @@ namespace StaticCodeAnalyzer
 
                 ResultsGrid.ItemsSource = _currentIssues;
                 StatusText.Text = $"Анализ завершён. Найдено {issues.Count} проблем.";
+                Logger.Log("PasteCodeEnd", $"Найдено проблем: {issues.Count}");
 
                 try { File.Delete(tempFile); } catch { }
             }
@@ -162,6 +174,7 @@ namespace StaticCodeAnalyzer
             {
                 MessageBox.Show($"Ошибка при анализе: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
                 StatusText.Text = "Анализ не удался.";
+                Logger.Log("PasteCodeError", ex.Message);
             }
             finally
             {
@@ -217,6 +230,7 @@ namespace StaticCodeAnalyzer
             _currentPath = null;
             _isFolder = false;
             StatusText.Text = "Очищено.";
+            Logger.Log("Clear", "Очистка результатов и дерева");
         }
 
         private void ToggleTreePanel_Checked(object sender, RoutedEventArgs e)
