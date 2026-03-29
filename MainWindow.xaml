@@ -4,7 +4,7 @@
         xmlns:local="clr-namespace:StaticCodeAnalyzer.Models"
         Title="Статический анализатор кода"
         Icon="Resources/icon.ico"
-        Height="600" Width="800"
+        Height="600" Width="1100"
         WindowStartupLocation="CenterScreen"
         Background="#2D2D2D">
     <Window.Resources>
@@ -55,7 +55,7 @@
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Padding" Value="2,2"/>
-            <Setter Property="FocusVisualStyle" Value="{x:Null}"/> <!-- убирает синюю рамку фокуса -->
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Style.Triggers>
                 <Trigger Property="IsSelected" Value="True">
                     <Setter Property="Background" Value="White"/>
@@ -67,12 +67,12 @@
             </Style.Triggers>
         </Style>
 
-        <!-- Стиль для CheckBox, чтобы его цвет менялся при выделении родителя и убрать синюю рамку -->
+        <!-- Стиль для CheckBox, чтобы его цвет менялся при выделении родителя -->
         <Style TargetType="CheckBox">
             <Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=TreeViewItem}}"/>
             <Setter Property="Margin" Value="5,0,0,0"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
-            <Setter Property="FocusVisualStyle" Value="{x:Null}"/> <!-- убирает синюю рамку -->
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
         </Style>
 
         <!-- Стиль для красных кнопок -->
