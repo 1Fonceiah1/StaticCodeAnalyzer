@@ -21,6 +21,7 @@ namespace StaticCodeAnalyzer
         private List<AnalysisIssue> _currentIssues;
         private string _currentPath;
         private bool _isFolder;
+        private List<FileTreeNode> _allRootNodes = new List<FileTreeNode>();
 
         public MainWindow()
         {
@@ -30,7 +31,6 @@ namespace StaticCodeAnalyzer
             _currentIssues = new List<AnalysisIssue>();
             this.Closing += MainWindow_Closing;
 
-            // Логируем запуск приложения
             Logger.Log("AppStart", "Приложение запущено");
         }
 
@@ -64,41 +64,81 @@ namespace StaticCodeAnalyzer
         private async Task LoadFileTreeAsync(string filePath)
         {
             FilesTreeView.Items.Clear();
-            var root = new TreeViewItem { Header = Path.GetFileName(filePath), Tag = filePath };
-            root.Items.Add(new TreeViewItem { Header = "(одиночный файл)" });
+            _allRootNodes.Clear();
+            var root = new FileTreeNode
+            {
+                Name = Path.GetFileName(filePath),
+                FullPath = filePath,
+                IsFolder = false,
+                Children = new List<FileTreeNode>()
+            };
+            _allRootNodes.Add(root);
             FilesTreeView.Items.Add(root);
         }
 
         private async Task LoadFolderTreeAsync(string folderPath)
         {
             FilesTreeView.Items.Clear();
-            var root = new TreeViewItem { Header = Path.GetFileName(folderPath), Tag = folderPath };
+            _allRootNodes.Clear();
+            var root = new FileTreeNode
+            {
+                Name = Path.GetFileName(folderPath),
+                FullPath = folderPath,
+                IsFolder = true,
+                Children = new List<FileTreeNode>()
+            };
             await AddFilesToTree(root, folderPath);
+            _allRootNodes.Add(root);
             FilesTreeView.Items.Add(root);
         }
 
-        private async Task AddFilesToTree(TreeViewItem parent, string directory)
+        private async Task AddFilesToTree(FileTreeNode parent, string directory)
         {
             try
             {
                 foreach (var dir in Directory.GetDirectories(directory))
                 {
-                    var subItem = new TreeViewItem { Header = Path.GetFileName(dir), Tag = dir };
-                    parent.Items.Add(subItem);
-                    await AddFilesToTree(subItem, dir);
+                    var subNode = new FileTreeNode
+                    {
+                        Name = Path.GetFileName(dir),
+                        FullPath = dir,
+                        IsFolder = true,
+                        Children = new List<FileTreeNode>()
+                    };
+                    parent.Children.Add(subNode);
+                    await AddFilesToTree(subNode, dir);
                 }
                 foreach (var file in Directory.GetFiles(directory, "*.cs"))
                 {
-                    var fileItem = new TreeViewItem { Header = Path.GetFileName(file), Tag = file };
-                    parent.Items.Add(fileItem);
+                    var fileNode = new FileTreeNode
+                    {
+                        Name = Path.GetFileName(file),
+                        FullPath = file,
+                        IsFolder = false,
+                        Children = new List<FileTreeNode>()
+                    };
+                    parent.Children.Add(fileNode);
                 }
             }
             catch (UnauthorizedAccessException) { }
         }
 
+        private List<FileTreeNode> GetAllFilesFromNodes(List<FileTreeNode> nodes)
+        {
+            var result = new List<FileTreeNode>();
+            foreach (var node in nodes)
+            {
+                if (!node.IsFolder)
+                    result.Add(node);
+                if (node.Children != null)
+                    result.AddRange(GetAllFilesFromNodes(node.Children));
+            }
+            return result;
+        }
+
         private async void Analyze_Click(object sender, RoutedEventArgs e)
         {
-            if (string.IsNullOrEmpty(_currentPath))
+            if (string.IsNullOrEmpty(_currentPath) && _allRootNodes.Count == 0)
             {
                 MessageBox.Show("Сначала откройте файл или папку.", "Нет данных", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
@@ -110,14 +150,13 @@ namespace StaticCodeAnalyzer
 
             try
             {
-                List<string> filesToAnalyze = new List<string>();
-                if (_isFolder)
+                var allFiles = GetAllFilesFromNodes(_allRootNodes);
+                var filesToAnalyze = allFiles.Where(f => !f.IsExcluded).Select(f => f.FullPath).ToList();
+
+                if (filesToAnalyze.Count == 0)
                 {
-                    filesToAnalyze.AddRange(Directory.GetFiles(_currentPath, "*.cs", SearchOption.AllDirectories));
-                }
-                else
-                {
-                    filesToAnalyze.Add(_currentPath);
+                    MessageBox.Show("Нет файлов для анализа. Возможно, все файлы исключены.", "Предупреждение", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
                 }
 
                 var issues = await Task.Run(() => _analysisService.AnalyzeFiles(filesToAnalyze));
@@ -227,6 +266,7 @@ namespace StaticCodeAnalyzer
             ResultsGrid.ItemsSource = null;
             _currentIssues.Clear();
             FilesTreeView.Items.Clear();
+            _allRootNodes.Clear();
             _currentPath = null;
             _isFolder = false;
             StatusText.Text = "Очищено.";
