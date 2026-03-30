@@ -14,11 +14,11 @@ namespace StaticCodeAnalyzer.Analysis
         {
             var issues = new List<AnalysisIssue>();
 
-            // Ищем все классы
+            // Ищет все классы
             var classes = root.DescendantNodes().OfType<ClassDeclarationSyntax>();
             foreach (var classDecl in classes)
             {
-                // 1. Находим не-readonly поля, которые могут изменяться
+                // Находит не-readonly поля, которые могут изменяться
                 var mutableFields = classDecl.DescendantNodes().OfType<FieldDeclarationSyntax>()
                     .Where(f => !f.Modifiers.Any(SyntaxKind.ReadOnlyKeyword) &&
                                 !f.Modifiers.Any(SyntaxKind.ConstKeyword))
@@ -26,9 +26,9 @@ namespace StaticCodeAnalyzer.Analysis
                     .ToList();
 
                 if (!mutableFields.Any())
-                    continue; // нет изменяемых полей — безопасно
+                    continue; // нет изменяемых полей - безопасно
 
-                // 2. Проверяем, есть ли в классе хоть один оператор lock
+                // Проверяет, есть ли в классе хоть один оператор lock
                 bool hasLock = classDecl.DescendantNodes().OfType<LockStatementSyntax>().Any();
 
                 if (!hasLock)

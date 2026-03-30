@@ -14,7 +14,7 @@ namespace StaticCodeAnalyzer.Analysis
         {
             var issues = new List<AnalysisIssue>();
 
-            // 1. Поиск SQL-инъекций: строки, содержащие SQL-ключевые слова и конкатенацию
+            // Поиск SQL-инъекций: строки, содержащие SQL-ключевые слова и конкатенацию
             var stringExpressions = root.DescendantNodes().OfType<BinaryExpressionSyntax>()
                 .Where(b => b.Kind() == SyntaxKind.AddExpression)
                 .Where(b => IsSqlString(b, semanticModel));
@@ -40,7 +40,7 @@ namespace StaticCodeAnalyzer.Analysis
                 }
             }
 
-            // 2. Поиск вызовов Process.Start с потенциально опасными аргументами
+            // Поиск вызовов Process.Start с потенциально опасными аргументами
             var processInvocations = root.DescendantNodes().OfType<InvocationExpressionSyntax>()
                 .Where(i => i.Expression is MemberAccessExpressionSyntax member &&
                             member.Name.Identifier.Text == "Start" &&
@@ -48,7 +48,7 @@ namespace StaticCodeAnalyzer.Analysis
 
             foreach (var invocation in processInvocations)
             {
-                // Проверяем, является ли аргумент строковым литералом
+                // Проверяет, является ли аргумент строковым литералом
                 bool isSafe = false;
                 if (invocation.ArgumentList.Arguments.Count > 0)
                 {
@@ -84,7 +84,6 @@ namespace StaticCodeAnalyzer.Analysis
 
         private bool IsSqlString(BinaryExpressionSyntax expr, SemanticModel semanticModel)
         {
-            // Простейшая эвристика: ищем строки, содержащие SQL-команды
             var sqlKeywords = new[] { "SELECT", "INSERT", "UPDATE", "DELETE", "FROM", "WHERE" };
             var left = expr.Left.ToString().ToUpperInvariant();
             var right = expr.Right.ToString().ToUpperInvariant();

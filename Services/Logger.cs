@@ -12,17 +12,15 @@ namespace StaticCodeAnalyzer.Services
 
         static Logger()
         {
-            // Создаём папку для логов, если её нет
+            // Создаёт папку для логов, если её нет
             if (!Directory.Exists(_logDirectory))
                 Directory.CreateDirectory(_logDirectory);
 
-            // Удаляем старые файлы логов
+            // Удаляет старые файлы логов
             CleanOldLogs();
         }
 
-        /// <summary>
         /// Записывает действие пользователя в лог-файл.
-        /// </summary>
         /// <param name="action">Описание действия (например, "OpenFile", "Analyze")</param>
         /// <param name="details">Дополнительные детали (путь, количество найденных проблем и т.п.)</param>
         public static void Log(string action, string details = null)
@@ -51,9 +49,8 @@ namespace StaticCodeAnalyzer.Services
             }
         }
 
-        /// <summary>
         /// Удаляет файлы логов, созданные более <see cref="_maxDaysToKeep"/> дней назад.
-        /// </summary>
+
         private static void CleanOldLogs()
         {
             try
