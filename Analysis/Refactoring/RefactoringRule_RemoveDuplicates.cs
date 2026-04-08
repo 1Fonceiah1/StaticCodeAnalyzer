@@ -11,6 +11,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 {
     public class RefactoringRule_RemoveDuplicates : IRefactoringRule
     {
+        // Устраняет дублирование: одинаковые блоки if-else, дублирующиеся методы, повторяющиеся блоки внутри метода
         public async Task<Document> ApplyAsync(Document document, CancellationToken cancellationToken)
         {
             var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
@@ -29,6 +30,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             return changed ? editor.GetChangedDocument() : document;
         }
 
+        // Находит if-else с идентичными блоками и заменяет на один блок
         private bool RemoveIdenticalIfElseBlocks(SyntaxNode root, DocumentEditor editor)
         {
             bool changed = false;
@@ -46,6 +48,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             return changed;
         }
 
+        // Находит методы с одинаковым телом и заменяет второй метод вызовом первого (с кэшированием, если есть возвращаемое значение)
         private async Task<bool> RemoveDuplicateMethodsAsync(SyntaxNode root, DocumentEditor editor, CancellationToken cancellationToken)
         {
             bool changed = false;
@@ -93,6 +96,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             return changed;
         }
 
+        // Находит дублирующиеся блоки кода внутри одного метода и выносит их в локальные функции
         private bool RemoveDuplicateBlocksInsideMethods(SyntaxNode root, DocumentEditor editor)
         {
             bool changed = false;
@@ -122,12 +126,14 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             return changed;
         }
 
+        // Сравнивает два синтаксических узла на эквивалентность
         private bool AreEquivalent(SyntaxNode node1, SyntaxNode node2)
         {
             if (node1 == null || node2 == null) return false;
             return SyntaxFactory.AreEquivalent(node1, node2);
         }
 
+        // Находит одинаковые блоки в списке
         private List<BlockSyntax> FindDuplicateBlocks(List<BlockSyntax> blocks)
         {
             var result = new List<BlockSyntax>();

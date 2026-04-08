@@ -9,11 +9,13 @@ namespace StaticCodeAnalyzer.Analysis
 {
     public class PoorLocalVariableNameRule : IAnalyzerRule
     {
+        // Список «плохих» имён, которые не несут смысловой нагрузки
         private static readonly HashSet<string> PoorNames = new HashSet<string>
         {
             "a", "b", "c", "d", "e", "f", "x", "y", "z", "temp", "tmp", "data", "val", "arg"
         };
 
+        // Находит локальные переменные с такими именами
         public async Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
         {
             var issues = new List<AnalysisIssue>();

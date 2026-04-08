@@ -10,6 +10,7 @@ namespace StaticCodeAnalyzer.Analysis
 {
     public class UnusedVariableRule : IAnalyzerRule
     {
+        // Находит локальные переменные, которые объявлены, но нигде не используются
         public async Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
         {
             var issues = new List<AnalysisIssue>();
@@ -21,10 +22,12 @@ namespace StaticCodeAnalyzer.Analysis
                 var symbol = semanticModel.GetDeclaredSymbol(variable);
                 if (symbol == null) continue;
 
+                // Рассматривает только локальные переменные (не поля)
                 if (variable.Parent is VariableDeclarationSyntax decl && decl.Parent is LocalDeclarationStatementSyntax)
                 {
+                    // Ищет ссылки на символ
                     var references = await SymbolFinder.FindReferencesAsync(symbol, null);
-                    if (references.Count() <= 1)
+                    if (references.Count() <= 1)    // только объявление
                     {
                         var location = variable.Identifier.GetLocation();
                         if (location == null) continue;

@@ -9,6 +9,7 @@ namespace StaticCodeAnalyzer.Analysis
 {
     public class CodeDuplicationRule : IAnalyzerRule
     {
+        // Сравнивает все методы в файле и находит пары с идентичным телом
         public async Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
         {
             var issues = new List<AnalysisIssue>();

@@ -9,10 +9,12 @@ namespace StaticCodeAnalyzer.Analysis
 {
     public class NamingConventionRule : IAnalyzerRule
     {
+        // Проверяет имена методов (должны быть PascalCase) и полей (должны быть camelCase или _camelCase)
         public async Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
         {
             var issues = new List<AnalysisIssue>();
 
+            // Проверка методов
             var methods = root.DescendantNodes().OfType<MethodDeclarationSyntax>();
             foreach (var method in methods)
             {
@@ -39,6 +41,7 @@ namespace StaticCodeAnalyzer.Analysis
                 }
             }
 
+            // Проверка полей (приватные должны быть _camelCase или camelCase)
             var fields = root.DescendantNodes().OfType<FieldDeclarationSyntax>();
             foreach (var field in fields)
             {

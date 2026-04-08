@@ -9,6 +9,7 @@ namespace StaticCodeAnalyzer.Analysis
 {
     public class DisposableFieldsRule : IAnalyzerRule
     {
+        // Находит классы, содержащие поля, реализующие IDisposable, но сам класс не реализует IDisposable
         public async Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
         {
             var issues = new List<AnalysisIssue>();
@@ -16,6 +17,7 @@ namespace StaticCodeAnalyzer.Analysis
             var classes = root.DescendantNodes().OfType<ClassDeclarationSyntax>();
             foreach (var classDecl in classes)
             {
+                // Собирает поля, чей тип реализует IDisposable
                 var disposableFields = classDecl.DescendantNodes().OfType<FieldDeclarationSyntax>()
                     .SelectMany(f => f.Declaration.Variables)
                     .Where(v =>
@@ -26,6 +28,7 @@ namespace StaticCodeAnalyzer.Analysis
                         return false;
                     }).ToList();
 
+                // Проверяет, реализует ли сам класс IDisposable
                 bool implementsIDisposable = classDecl.BaseList?.Types.Any(t => t.Type.ToString().Contains("IDisposable")) ?? false;
                 if (disposableFields.Any() && !implementsIDisposable)
                 {

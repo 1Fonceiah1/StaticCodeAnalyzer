@@ -10,6 +10,7 @@ namespace StaticCodeAnalyzer.Analysis
 {
     public class MethodComplexityRule : IAnalyzerRule
     {
+        // Рассчитывает цикломатическую сложность метода и выдаёт предупреждение, если она превышает 10
         public async Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
         {
             var issues = new List<AnalysisIssue>();
@@ -43,6 +44,7 @@ namespace StaticCodeAnalyzer.Analysis
             return issues;
         }
 
+        // Подсчитывает количество точек ветвления: if, for, foreach, while, case, &&, ||
         private int CalculateCyclomaticComplexity(MethodDeclarationSyntax method)
         {
             var nodes = method.DescendantNodes();

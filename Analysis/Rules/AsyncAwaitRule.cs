@@ -10,14 +10,17 @@ namespace StaticCodeAnalyzer.Analysis
 {
     public class AsyncAwaitRule : IAnalyzerRule
     {
+        // Находит асинхронные методы без оператора await
         public async Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
         {
             var issues = new List<AnalysisIssue>();
+            // Ищет все методы с модификатором async
             var asyncMethods = root.DescendantNodes().OfType<MethodDeclarationSyntax>()
                 .Where(m => m.Modifiers.Any(SyntaxKind.AsyncKeyword));
 
             foreach (var method in asyncMethods)
             {
+                // Проверяет, есть ли внутри метода await
                 bool hasAwait = method.DescendantNodes().OfType<AwaitExpressionSyntax>().Any();
                 if (!hasAwait)
                 {

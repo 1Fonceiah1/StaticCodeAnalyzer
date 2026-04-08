@@ -11,11 +11,13 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 {
     public class RefactoringRule_RenameLocalVariables : IRefactoringRule
     {
+        // Список «плохих» имён, которые следует заменить
         private static readonly HashSet<string> BadNames = new HashSet<string>
         {
             "a", "b", "c", "d", "e", "f", "x", "y", "z", "temp", "tmp", "data", "val", "arg"
         };
 
+        // Переименовывает локальные переменные с плохими именами на более осмысленные, исходя из контекста
         public async Task<Document> ApplyAsync(Document document, CancellationToken cancellationToken)
         {
             var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
@@ -46,16 +48,20 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             return changed ? solution.GetDocument(document.Id) : document;
         }
 
+        // Предлагает новое имя на основе контекста: счётчик цикла, тип, инициализатор и т.д.
         private string SuggestBetterName(VariableDeclaratorSyntax variable, SemanticModel semanticModel, CancellationToken cancellationToken)
         {
+            // Если переменная используется как счётчик в for
             var forLoop = variable.FirstAncestorOrSelf<ForStatementSyntax>();
             if (forLoop != null && forLoop.Declaration?.Variables.Any(v => v.Identifier.Text == variable.Identifier.Text) == true)
                 return "index";
 
+            // Если переменная в foreach
             var forEach = variable.FirstAncestorOrSelf<ForEachStatementSyntax>();
             if (forEach != null && forEach.Identifier.Text == variable.Identifier.Text)
                 return "item";
 
+            // По типу переменной
             var declaration = variable.Parent as VariableDeclarationSyntax;
             if (declaration?.Type != null)
             {
@@ -70,6 +76,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                     return "flag";
             }
 
+            // По инициализатору
             if (variable.Initializer?.Value is LiteralExpressionSyntax literal)
             {
                 if (literal.Token.Value is int)
@@ -78,9 +85,11 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                     return "message";
             }
 
+            // Если инициализируется результатом вызова метода
             if (variable.Initializer?.Value is InvocationExpressionSyntax)
                 return "result";
 
+            // Если используется в арифметической операции
             var usage = variable.FirstAncestorOrSelf<MethodDeclarationSyntax>()?
                 .DescendantNodes().OfType<IdentifierNameSyntax>()
                 .Where(id => id.Identifier.Text == variable.Identifier.Text)

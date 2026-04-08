@@ -9,6 +9,7 @@ namespace StaticCodeAnalyzer.Analysis
 {
     public class EmptyCatchBlockRule : IAnalyzerRule
     {
+        // Находит блоки catch, у которых нет операторов в теле
         public async Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
         {
             var issues = new List<AnalysisIssue>();

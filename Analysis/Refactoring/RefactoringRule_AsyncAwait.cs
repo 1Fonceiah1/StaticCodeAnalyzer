@@ -10,6 +10,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 {
     public class RefactoringRule_AsyncAwait : IRefactoringRule
     {
+        // Заменяет Thread.Sleep на await Task.Delay, добавляет async и корректирует возвращаемый тип
         public async Task<Document> ApplyAsync(Document document, CancellationToken cancellationToken)
         {
             var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
@@ -21,6 +22,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 
             foreach (var method in methods)
             {
+                // Находит вызовы Thread.Sleep
                 var threadSleeps = method.DescendantNodes().OfType<InvocationExpressionSyntax>()
                     .Where(inv => inv.Expression is MemberAccessExpressionSyntax ma &&
                                   ma.Expression.ToString() == "Thread" &&
@@ -29,6 +31,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 
                 if (threadSleeps.Any())
                 {
+                    // Добавляет using System.Threading.Tasks при необходимости
                     var compilationUnit = root as CompilationUnitSyntax ?? method.FirstAncestorOrSelf<CompilationUnitSyntax>();
                     if (compilationUnit != null && !compilationUnit.Usings.Any(u => u.Name.ToString() == "System.Threading.Tasks"))
                     {
@@ -38,6 +41,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                         root = newCompilationUnit;
                     }
 
+                    // Заменяет каждый Thread.Sleep на await Task.Delay
                     var newMethod = method;
                     foreach (var sleep in threadSleeps)
                     {
@@ -53,9 +57,11 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                         newMethod = newMethod.ReplaceNode(sleep, awaitDelay);
                     }
 
+                    // Добавляет async, если его нет
                     if (!newMethod.Modifiers.Any(SyntaxKind.AsyncKeyword))
                         newMethod = newMethod.AddModifiers(SyntaxFactory.Token(SyntaxKind.AsyncKeyword));
 
+                    // Корректирует возвращаемый тип: void -> Task, T -> Task<T>
                     var returnType = semanticModel.GetTypeInfo(method.ReturnType, cancellationToken).Type;
                     if (returnType?.SpecialType == SpecialType.System_Void)
                         newMethod = newMethod.WithReturnType(SyntaxFactory.ParseTypeName("Task"));
@@ -68,6 +74,8 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                     editor.ReplaceNode(method, newMethod);
                     changed = true;
                 }
+
+                // Удаляет бесполезный async (если нет await)
                 else if (method.Modifiers.Any(SyntaxKind.AsyncKeyword) && !method.DescendantNodes().OfType<AwaitExpressionSyntax>().Any())
                 {
                     var newModifiers = method.Modifiers.Where(m => !m.IsKind(SyntaxKind.AsyncKeyword));

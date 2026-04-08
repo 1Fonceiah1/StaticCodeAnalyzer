@@ -11,12 +11,14 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 {
     public class RefactoringRule_MagicNumbers : IRefactoringRule
     {
+        // Заменяет числовые литералы (кроме разрешённых) на именованные константы
         public async Task<Document> ApplyAsync(Document document, CancellationToken cancellationToken)
         {
             var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
             var semanticModel = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
             var editor = await DocumentEditor.CreateAsync(document, cancellationToken).ConfigureAwait(false);
 
+            // Находит все числовые литералы, исключая разрешённые и контексты констант
             var numericLiterals = root.DescendantNodes()
                 .OfType<LiteralExpressionSyntax>()
                 .Where(l => l.IsKind(SyntaxKind.NumericLiteralExpression) && !IsAllowed(l) && !IsInConstContext(l, semanticModel))
@@ -35,11 +37,13 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                 var containingType = first.Ancestors().OfType<TypeDeclarationSyntax>().FirstOrDefault();
                 if (containingType == null) continue;
 
+                // Проверяет, нет ли уже константы с таким именем
                 var typeSymbol = semanticModel.GetDeclaredSymbol(containingType, cancellationToken);
                 if (typeSymbol != null && typeSymbol.GetMembers(constName).Any())
                     continue;
 
                 var typeName = GetNumericTypeName(first);
+                // Создаёт приватную константу
                 var constField = SyntaxFactory.FieldDeclaration(
                     SyntaxFactory.VariableDeclaration(
                         SyntaxFactory.ParseTypeName(typeName),
@@ -56,6 +60,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                     replacements[lit] = constName;
             }
 
+            // Заменяет литералы на идентификаторы констант
             foreach (var (literal, constName) in replacements)
             {
                 var newIdentifier = SyntaxFactory.IdentifierName(constName).WithTriviaFrom(literal);
@@ -65,6 +70,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             return editor.GetChangedDocument();
         }
 
+        // Разрешённые числа (0,1,-1,0.0,1.0)
         private bool IsAllowed(LiteralExpressionSyntax literal)
         {
             var text = literal.Token.Text;
@@ -72,6 +78,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                    text == "0f" || text == "1f" || text == "-1f" || text == "0.0f" || text == "1.0f";
         }
 
+        // Пропускает литералы внутри атрибутов, параметров по умолчанию, enum и констант
         private bool IsInConstContext(LiteralExpressionSyntax literal, SemanticModel model)
         {
             return literal.Ancestors().Any(a => a is AttributeSyntax || a is EnumMemberDeclarationSyntax ||
@@ -79,12 +86,14 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                                                (a is VariableDeclaratorSyntax v && v.Parent?.Parent is FieldDeclarationSyntax f && f.Modifiers.Any(SyntaxKind.ConstKeyword)));
         }
 
+        // Генерирует имя константы вида magic_100, magic_3_14
         private string GenerateConstName(string literalText)
         {
             var sanitized = literalText.Replace(".", "_").Replace("-", "minus");
             return $"magic_{sanitized}";
         }
 
+        // Определяет тип числа (int, float, double, decimal, long и т.д.)
         private string GetNumericTypeName(LiteralExpressionSyntax literal)
         {
             var text = literal.Token.Text;

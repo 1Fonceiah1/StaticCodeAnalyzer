@@ -11,6 +11,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 {
     public class RefactoringRule_SplitMethodByResponsibility : IRefactoringRule
     {
+        // Разделяет длинные методы (более 15 операторов) на отдельные методы: ComputeValues и DisplayOutputs
         public async Task<Document> ApplyAsync(Document document, CancellationToken cancellationToken)
         {
             var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
@@ -28,6 +29,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                 var outputStatements = new List<StatementSyntax>();
                 var otherStatements = new List<StatementSyntax>();
 
+                // Классифицирует операторы: вычисления, вывод, остальное
                 foreach (var stmt in statements)
                 {
                     if (ContainsConsoleWrite(stmt))
@@ -38,6 +40,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                         otherStatements.Add(stmt);
                 }
 
+                // Если есть и вычисления, и вывод – разделяет
                 if (computationStatements.Any() && outputStatements.Any())
                 {
                     var className = method.Parent as TypeDeclarationSyntax;
@@ -73,6 +76,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             return changed ? editor.GetChangedDocument() : document;
         }
 
+        // Проверяет, содержит ли оператор вызов Console.Write/WriteLine
         private bool ContainsConsoleWrite(StatementSyntax stmt)
         {
             return stmt.DescendantNodes().OfType<InvocationExpressionSyntax>()
@@ -81,6 +85,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                             (ma.Name.Identifier.Text == "WriteLine" || ma.Name.Identifier.Text == "Write"));
         }
 
+        // Проверяет, содержит ли оператор арифметику или присваивание
         private bool ContainsArithmeticOrAssignment(StatementSyntax stmt)
         {
             return stmt.DescendantNodes().OfType<AssignmentExpressionSyntax>().Any() ||
@@ -90,6 +95,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                        b.IsKind(SyntaxKind.SubtractExpression));
         }
 
+        // Создаёт метод ComputeValues
         private MethodDeclarationSyntax CreateComputeMethod(List<StatementSyntax> statements, MethodDeclarationSyntax original)
         {
             var body = SyntaxFactory.Block(statements);
@@ -101,6 +107,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                 .NormalizeWhitespace();
         }
 
+        // Создаёт метод DisplayOutputs
         private MethodDeclarationSyntax CreateOutputMethod(List<StatementSyntax> statements, MethodDeclarationSyntax original)
         {
             var body = SyntaxFactory.Block(statements);
@@ -112,6 +119,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                 .NormalizeWhitespace();
         }
 
+        // Создаёт оператор вызова метода
         private StatementSyntax CreateInvocationStatement(string methodName)
         {
             return SyntaxFactory.ExpressionStatement(

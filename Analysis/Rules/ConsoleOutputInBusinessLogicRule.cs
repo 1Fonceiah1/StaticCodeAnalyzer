@@ -10,6 +10,7 @@ namespace StaticCodeAnalyzer.Analysis
 {
     public class ConsoleOutputInBusinessLogicRule : IAnalyzerRule
     {
+        // Находит прямые вызовы Console.WriteLine/Write в бизнес-методах (исключая специальные методы вывода)
         public async Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
         {
             var issues = new List<AnalysisIssue>();

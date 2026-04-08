@@ -10,6 +10,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 {
     public class RefactoringRule_UnusedVariable : IRefactoringRule
     {
+        // Удаляет неиспользуемые локальные переменные
         public async Task<Document> ApplyAsync(Document document, CancellationToken cancellationToken)
         {
             var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
@@ -27,10 +28,11 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                 var symbol = semanticModel.GetDeclaredSymbol(variable, cancellationToken);
                 if (symbol == null) continue;
 
+                // Ищет ссылки на символ
                 var references = await SymbolFinder.FindReferencesAsync(symbol, document.Project.Solution, cancellationToken).ConfigureAwait(false);
                 int refCount = references.SelectMany(r => r.Locations).Count(loc => !loc.IsImplicit);
 
-                if (refCount == 1) // only the declaration itself
+                if (refCount == 1)  // только объявление
                 {
                     var declaration = variable.Parent as VariableDeclarationSyntax;
                     var statement = declaration?.Parent as LocalDeclarationStatementSyntax;
@@ -41,6 +43,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                     }
                     else if (declaration != null && declaration.Variables.Count > 1)
                     {
+                        // Удаляет только эту переменную из списка
                         var newDecl = declaration.RemoveNode(variable, SyntaxRemoveOptions.KeepNoTrivia);
                         if (newDecl is VariableDeclarationSyntax newVarDecl && newVarDecl.Variables.Count == 0)
                         {

@@ -10,6 +10,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 {
     public class RefactoringRule_EmptyCatchBlock : IRefactoringRule
     {
+        // Добавляет комментарий-заглушку в пустые блоки catch
         public async Task<Document> ApplyAsync(Document document, CancellationToken cancellationToken)
         {
             var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);

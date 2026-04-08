@@ -11,6 +11,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 {
     public class RefactoringRule_NamingConvention : IRefactoringRule
     {
+        // Приводит имена классов и методов к PascalCase, приватные поля к _camelCase
         public async Task<Document> ApplyAsync(Document document, CancellationToken cancellationToken)
         {
             var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
@@ -18,6 +19,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             var solution = document.Project.Solution;
             bool changed = false;
 
+            // Переименование классов
             var classes = root.DescendantNodes().OfType<ClassDeclarationSyntax>();
             foreach (var classDecl in classes)
             {
@@ -29,6 +31,8 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                     changed = true;
                 }
             }
+
+            // Переименование методов (кроме переопределённых и явно реализованных интерфейсов)
 
             var methods = root.DescendantNodes().OfType<MethodDeclarationSyntax>();
             foreach (var method in methods)
@@ -42,6 +46,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                 }
             }
 
+            // Переименование приватных полей в _camelCase
             var fields = root.DescendantNodes().OfType<FieldDeclarationSyntax>()
                 .SelectMany(f => f.Declaration.Variables)
                 .Where(v => v.Parent?.Parent is FieldDeclarationSyntax fieldDecl && fieldDecl.Modifiers.Any(SyntaxKind.PrivateKeyword) && !fieldDecl.Modifiers.Any(SyntaxKind.ConstKeyword));

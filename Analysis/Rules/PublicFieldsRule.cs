@@ -10,6 +10,7 @@ namespace StaticCodeAnalyzer.Analysis
 {
     public class PublicFieldsRule : IAnalyzerRule
     {
+        // Находит публичные поля (не константы) – нарушение инкапсуляции
         public async Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
         {
             var issues = new List<AnalysisIssue>();

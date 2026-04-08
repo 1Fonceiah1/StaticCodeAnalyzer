@@ -11,6 +11,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 {
     public class RefactoringRule_RemoveGoto : IRefactoringRule
     {
+        // Преобразует конструкции с goto в if-else без goto
         public async Task<Document> ApplyAsync(Document document, CancellationToken cancellationToken)
         {
             var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
@@ -29,12 +30,15 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                 var label = method.DescendantNodes().OfType<LabeledStatementSyntax>().FirstOrDefault(l => l.Identifier.Text == labelName);
                 if (label == null) continue;
 
+                // Находит окружающий if, который содержит этот goto
                 var ifStmt = gotoStmt.Ancestors().OfType<IfStatementSyntax>().FirstOrDefault();
                 if (ifStmt != null && (ifStmt.Statement == gotoStmt || (ifStmt.Statement is BlockSyntax block && block.Statements.Contains(gotoStmt))))
                 {
+                    // Инвертирует условие
                     var condition = ifStmt.Condition;
                     var invertedCondition = SyntaxFactory.PrefixUnaryExpression(SyntaxKind.LogicalNotExpression, SyntaxFactory.ParenthesizedExpression(condition));
 
+                    // Собирает операторы между if и меткой
                     var statementsBeforeLabel = new List<SyntaxNode>();
                     var parent = label.Parent;
                     if (parent != null)

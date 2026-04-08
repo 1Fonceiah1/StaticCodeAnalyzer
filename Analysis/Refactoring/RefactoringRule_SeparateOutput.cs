@@ -10,6 +10,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 {
     public class RefactoringRule_SeparateOutput : IRefactoringRule
     {
+        // Выделяет прямые вызовы Console.WriteLine в отдельный метод DisplayOutput
         public async Task<Document> ApplyAsync(Document document, CancellationToken cancellationToken)
         {
             var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
@@ -27,6 +28,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             var classDecl = consoleWrites.First().Ancestors().OfType<ClassDeclarationSyntax>().FirstOrDefault();
             if (classDecl == null) return document;
 
+            // Создаёт метод DisplayOutput, если его ещё нет
             var outputMethod = SyntaxFactory.MethodDeclaration(
                     SyntaxFactory.PredefinedType(SyntaxFactory.Token(SyntaxKind.VoidKeyword)),
                     "DisplayOutput")
@@ -54,6 +56,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                 changed = true;
             }
 
+            // Заменяет каждый вызов Console.WriteLine на вызов DisplayOutput
             foreach (var write in consoleWrites)
             {
                 var arg = write.ArgumentList.Arguments.FirstOrDefault();

@@ -10,6 +10,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 {
     public class RefactoringRule_EncapsulateFields : IRefactoringRule
     {
+        // Заменяет публичные поля на приватные поля + автоматические свойства
         public async Task<Document> ApplyAsync(Document document, CancellationToken cancellationToken)
         {
             var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
@@ -31,6 +32,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                     string propertyName = ToPascalCase(fieldName);
                     string fieldType = fieldDecl.Declaration.Type.ToString();
 
+                    // Делает поле приватным
                     var newModifiers = fieldDecl.Modifiers.Where(m => !m.IsKind(SyntaxKind.PublicKeyword));
                     if (!newModifiers.Any(m => m.IsKind(SyntaxKind.PrivateKeyword)))
                         newModifiers = newModifiers.Append(SyntaxFactory.Token(SyntaxKind.PrivateKeyword));
@@ -40,6 +42,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 
                     editor.ReplaceNode(fieldDecl, newFieldDecl);
 
+                    // Создаёт публичное автоматическое свойство
                     var property = SyntaxFactory.PropertyDeclaration(SyntaxFactory.ParseTypeName(fieldType), propertyName)
                         .WithModifiers(SyntaxFactory.TokenList(SyntaxFactory.Token(SyntaxKind.PublicKeyword)))
                         .WithAccessorList(SyntaxFactory.AccessorList(
@@ -60,6 +63,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             return changed ? editor.GetChangedDocument() : document;
         }
 
+        // Преобразует имя поля в PascalCase для свойства
         private static string ToPascalCase(string name)
         {
             if (string.IsNullOrEmpty(name)) return name;

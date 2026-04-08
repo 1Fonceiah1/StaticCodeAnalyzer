@@ -9,6 +9,7 @@ namespace StaticCodeAnalyzer.Analysis
 {
     public class GotoStatementRule : IAnalyzerRule
     {
+        // Находит все операторы goto в коде
         public async Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
         {
             var issues = new List<AnalysisIssue>();

@@ -11,6 +11,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 {
     public class RefactoringRule_DisposableFields : IRefactoringRule
     {
+        // Добавляет реализацию IDisposable в класс, если у него есть поля, реализующие IDisposable
         public async Task<Document> ApplyAsync(Document document, CancellationToken cancellationToken)
         {
             var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
@@ -25,6 +26,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                 var classSymbol = semanticModel.GetDeclaredSymbol(classDecl, cancellationToken);
                 if (classSymbol == null) continue;
 
+                // Находит поля, чей тип реализует IDisposable
                 var disposableFields = classDecl.DescendantNodes()
                     .OfType<FieldDeclarationSyntax>()
                     .SelectMany(f => f.Declaration.Variables)
@@ -36,6 +38,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 
                 if (classSymbol.AllInterfaces.Any(i => i.Name == "IDisposable")) continue;
 
+                // Добавляет интерфейс IDisposable к классу
                 var baseList = classDecl.BaseList ?? SyntaxFactory.BaseList();
                 var disposableBase = SyntaxFactory.SimpleBaseType(SyntaxFactory.ParseTypeName("System.IDisposable"));
                 if (!baseList.Types.Any(t => t.Type.ToString().Contains("IDisposable")))
@@ -46,9 +49,11 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                     changed = true;
                 }
 
+                // Если метода Dispose ещё нет, создаёт его
                 var disposeMethod = classSymbol.GetMembers("Dispose").OfType<IMethodSymbol>().FirstOrDefault(m => m.Parameters.Length == 0);
                 if (disposeMethod != null) continue;
 
+                // Формирует тело Dispose: проверяет каждое поле на null и вызывает Dispose, затем GC.SuppressFinalize
                 var disposeBody = SyntaxFactory.Block();
                 foreach (var field in disposableFields)
                 {
@@ -84,6 +89,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             return changed ? editor.GetChangedDocument() : document;
         }
 
+        // Проверяет, реализует ли тип IDisposable
         private bool ImplementsIDisposable(ITypeSymbol type)
         {
             return type.AllInterfaces.Any(i => i.Name == "IDisposable") || type.Name == "IDisposable";

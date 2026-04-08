@@ -10,6 +10,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 {
     public class RefactoringRule_FixUndefinedIdentifier : IRefactoringRule
     {
+        // Находит необъявленные идентификаторы и для некоторых известных имён создаёт приватные константы
         public async Task<Document> ApplyAsync(Document document, CancellationToken cancellationToken)
         {
             var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
@@ -17,6 +18,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             var editor = await DocumentEditor.CreateAsync(document, cancellationToken).ConfigureAwait(false);
             bool changed = false;
 
+            // Отбирает идентификаторы, которые не являются частью обращения к члену и не объявлены в текущем контексте
             var identifiers = root.DescendantNodes().OfType<IdentifierNameSyntax>()
                 .Where(id => !(id.Parent is MemberAccessExpressionSyntax) && !IsDeclared(id, semanticModel, cancellationToken))
                 .ToList();
@@ -29,6 +31,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                     var constValue = GuessConstantValue(id.Identifier.Text);
                     if (constValue.HasValue)
                     {
+                        // Создаёт приватную константу с предполагаемым значением
                         var constDecl = SyntaxFactory.FieldDeclaration(
                             SyntaxFactory.VariableDeclaration(
                                 SyntaxFactory.PredefinedType(SyntaxFactory.Token(SyntaxKind.IntKeyword)),
@@ -48,12 +51,14 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             return changed ? editor.GetChangedDocument() : document;
         }
 
+        // Проверяет, объявлен ли идентификатор в текущей модели семантики
         private bool IsDeclared(IdentifierNameSyntax id, SemanticModel model, CancellationToken token)
         {
             var symbol = model.GetSymbolInfo(id, token).Symbol;
             return symbol != null;
         }
 
+        // Для некоторых часто встречающихся необъявленных имён возвращает предположительное числовое значение
         private int? GuessConstantValue(string name)
         {
             switch (name.ToLower())

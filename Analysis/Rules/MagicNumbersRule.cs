@@ -10,6 +10,7 @@ namespace StaticCodeAnalyzer.Analysis
 {
     public class MagicNumbersRule : IAnalyzerRule
     {
+        // Находит числовые литералы, кроме 0,1,-1 и их аналогов с плавающей точкой
         public async Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
         {
             var issues = new List<AnalysisIssue>();
@@ -20,6 +21,7 @@ namespace StaticCodeAnalyzer.Analysis
 
             foreach (var num in numbers)
             {
+                // Пропускает числа, объявленные внутри констант
                 bool isConst = false;
                 var parent = num.Parent;
                 while (parent != null && !(parent is FieldDeclarationSyntax || parent is LocalDeclarationStatementSyntax))
@@ -55,6 +57,7 @@ namespace StaticCodeAnalyzer.Analysis
             return issues;
         }
 
+        // Возвращает true, если число относится к разрешённым (0,1,-1,0.0,1.0)
         private bool IsAllowedMagicNumber(LiteralExpressionSyntax literal)
         {
             var text = literal.Token.Text;
