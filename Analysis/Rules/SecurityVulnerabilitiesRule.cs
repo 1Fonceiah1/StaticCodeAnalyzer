@@ -10,16 +10,18 @@ namespace StaticCodeAnalyzer.Analysis
 {
     public class SecurityVulnerabilitiesRule : IAnalyzerRule
     {
-        public async Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
+        private static readonly string[] SqlKeywords = { "SELECT", "INSERT", "UPDATE", "DELETE", "FROM", "WHERE", "JOIN", "UNION" };
+
+        public Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
         {
             var issues = new List<AnalysisIssue>();
 
-            // Поиск SQL-инъекций: строки, содержащие SQL-ключевые слова и конкатенацию
-            var stringExpressions = root.DescendantNodes().OfType<BinaryExpressionSyntax>()
-                .Where(b => b.Kind() == SyntaxKind.AddExpression)
-                .Where(b => IsSqlString(b, semanticModel));
+            // SQL-инъекции: конкатенация строк в запросах
+            var stringConcatenations = root.DescendantNodes()
+                .OfType<BinaryExpressionSyntax>()
+                .Where(b => b.IsKind(SyntaxKind.AddExpression) && ContainsSqlKeyword(b));
 
-            foreach (var expr in stringExpressions)
+            foreach (var expr in stringConcatenations)
             {
                 var location = expr.GetLocation();
                 if (location != null)
@@ -33,33 +35,24 @@ namespace StaticCodeAnalyzer.Analysis
                         ColumnNumber = lineSpan.StartLinePosition.Character + 1,
                         Type = "ошибка",
                         Code = "SEC001",
-                        Description = "Обнаружена конкатенация строк в SQL-запросе. Это может привести к SQL-инъекции.",
-                        Suggestion = "Используйте параметризованные запросы (SqlCommand.Parameters) или ORM с защитой от инъекций.",
+                        Description = "Возможная уязвимость SQL-инъекции: конкатенация строк в запросе.",
+                        Suggestion = "Используйте параметризованные запросы или ORM с защитой от инъекций.",
                         RuleName = "SecurityVulnerabilities"
                     });
                 }
             }
 
-            // Поиск вызовов Process.Start с потенциально опасными аргументами
-            var processInvocations = root.DescendantNodes().OfType<InvocationExpressionSyntax>()
-                .Where(i => i.Expression is MemberAccessExpressionSyntax member &&
-                            member.Name.Identifier.Text == "Start" &&
-                            member.Expression.ToString().Contains("Process"));
+            // Process.Start с непроверенными аргументами
+            var processCalls = root.DescendantNodes()
+                .OfType<InvocationExpressionSyntax>()
+                .Where(IsProcessStartCall);
 
-            foreach (var invocation in processInvocations)
+            foreach (var call in processCalls)
             {
-                // Проверяет, является ли аргумент строковым литералом
-                bool isSafe = false;
-                if (invocation.ArgumentList.Arguments.Count > 0)
+                var firstArg = call.ArgumentList.Arguments.FirstOrDefault()?.Expression;
+                if (firstArg is not LiteralExpressionSyntax)
                 {
-                    var firstArg = invocation.ArgumentList.Arguments[0].Expression;
-                    if (firstArg is LiteralExpressionSyntax literal && literal.Kind() == SyntaxKind.StringLiteralExpression)
-                        isSafe = true;
-                }
-
-                if (!isSafe)
-                {
-                    var location = invocation.GetLocation();
+                    var location = call.GetLocation();
                     if (location != null)
                     {
                         var lineSpan = location.GetLineSpan();
@@ -71,23 +64,31 @@ namespace StaticCodeAnalyzer.Analysis
                             ColumnNumber = lineSpan.StartLinePosition.Character + 1,
                             Type = "ошибка",
                             Code = "SEC002",
-                            Description = "Вызов Process.Start с аргументом, не являющимся строковым литералом. Это может привести к выполнению произвольного кода.",
-                            Suggestion = "Проверяйте и валидируйте входные данные перед передачей в Process.Start.",
+                            Description = "Process.Start вызван с непроверенным аргументом — риск выполнения произвольного кода.",
+                            Suggestion = "Валидируйте входные данные перед передачей в Process.Start.",
                             RuleName = "SecurityVulnerabilities"
                         });
                     }
                 }
             }
 
-            return issues;
+            return Task.FromResult(issues);
         }
 
-        private bool IsSqlString(BinaryExpressionSyntax expr, SemanticModel semanticModel)
+        private bool ContainsSqlKeyword(BinaryExpressionSyntax expr)
         {
-            var sqlKeywords = new[] { "SELECT", "INSERT", "UPDATE", "DELETE", "FROM", "WHERE" };
-            var left = expr.Left.ToString().ToUpperInvariant();
-            var right = expr.Right.ToString().ToUpperInvariant();
-            return sqlKeywords.Any(k => left.Contains(k) || right.Contains(k));
+            var text = expr.ToString().ToUpperInvariant();
+            return SqlKeywords.Any(k => text.Contains(k));
+        }
+
+        private bool IsProcessStartCall(InvocationExpressionSyntax invocation)
+        {
+            if (invocation.Expression is MemberAccessExpressionSyntax member)
+            {
+                return member.Name.Identifier.Text == "Start" &&
+                       member.Expression.ToString().Contains("Process");
+            }
+            return false;
         }
     }
 }

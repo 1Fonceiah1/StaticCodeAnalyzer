@@ -1,4 +1,5 @@
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System.Collections.Generic;
 using System.Linq;
@@ -9,17 +10,16 @@ namespace StaticCodeAnalyzer.Analysis
 {
     public class NamingConventionRule : IAnalyzerRule
     {
-        // Проверяет имена методов (должны быть PascalCase) и полей (должны быть camelCase или _camelCase)
-        public async Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
+        public Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
         {
             var issues = new List<AnalysisIssue>();
 
-            // Проверка методов
+            // Проверка методов: должны быть PascalCase
             var methods = root.DescendantNodes().OfType<MethodDeclarationSyntax>();
             foreach (var method in methods)
             {
                 var name = method.Identifier.Text;
-                if (!string.IsNullOrEmpty(name) && !char.IsUpper(name[0]))
+                if (!string.IsNullOrEmpty(name) && !IsPascalCase(name))
                 {
                     var location = method.Identifier.GetLocation();
                     if (location != null)
@@ -33,27 +33,23 @@ namespace StaticCodeAnalyzer.Analysis
                             ColumnNumber = lineSpan.StartLinePosition.Character + 1,
                             Type = "запах кода",
                             Code = "NAM001",
-                            Description = $"Метод '{name}' должен начинаться с заглавной буквы (PascalCase).",
-                            Suggestion = $"Переименуйте в '{char.ToUpper(name[0]) + name.Substring(1)}'.",
+                            Description = $"Метод '{name}' нарушает соглашение об именовании (должен быть PascalCase).",
+                            Suggestion = $"Переименуйте в '{ToPascalCase(name)}'.",
                             RuleName = "NamingConvention"
                         });
                     }
                 }
             }
 
-            // Проверка полей (приватные должны быть _camelCase или camelCase)
-            var fields = root.DescendantNodes().OfType<FieldDeclarationSyntax>();
+            // Проверка приватных полей: должны быть _camelCase
+            var fields = root.DescendantNodes().OfType<FieldDeclarationSyntax>()
+                .Where(f => f.Modifiers.Any(SyntaxKind.PrivateKeyword) && !f.Modifiers.Any(SyntaxKind.ConstKeyword));
             foreach (var field in fields)
             {
                 foreach (var variable in field.Declaration.Variables)
                 {
                     var name = variable.Identifier.Text;
-                    if (string.IsNullOrEmpty(name)) continue;
-
-                    if (name.StartsWith("_") && name.Length > 1 && char.IsLower(name[1]))
-                        continue;
-
-                    if (!char.IsLower(name[0]))
+                    if (!string.IsNullOrEmpty(name) && !IsPrivateFieldConvention(name))
                     {
                         var location = variable.Identifier.GetLocation();
                         if (location != null)
@@ -67,8 +63,8 @@ namespace StaticCodeAnalyzer.Analysis
                                 ColumnNumber = lineSpan.StartLinePosition.Character + 1,
                                 Type = "запах кода",
                                 Code = "NAM002",
-                                Description = $"Поле '{name}' должно начинаться с маленькой буквы (camelCase).",
-                                Suggestion = $"Переименуйте в '{char.ToLower(name[0]) + name.Substring(1)}'.",
+                                Description = $"Поле '{name}' должно следовать соглашению _camelCase для приватных полей.",
+                                Suggestion = $"Переименуйте в '_{ToCamelCase(name)}'.",
                                 RuleName = "NamingConvention"
                             });
                         }
@@ -76,7 +72,13 @@ namespace StaticCodeAnalyzer.Analysis
                 }
             }
 
-            return issues;
+            return Task.FromResult(issues);
         }
+
+        private bool IsPascalCase(string name) => !string.IsNullOrEmpty(name) && char.IsUpper(name[0]) && !name.Contains('_');
+        private string ToPascalCase(string name) => string.IsNullOrEmpty(name) ? name : char.ToUpperInvariant(name[0]) + name.Substring(1);
+
+        private bool IsPrivateFieldConvention(string name) => name.StartsWith("_") && name.Length > 1 && char.IsLower(name[1]);
+        private string ToCamelCase(string name) => string.IsNullOrEmpty(name) ? name : char.ToLowerInvariant(name[0]) + (name.Length > 1 ? name.Substring(1) : "");
     }
 }

@@ -9,48 +9,52 @@ namespace StaticCodeAnalyzer.Analysis
 {
     public class PoorLocalVariableNameRule : IAnalyzerRule
     {
-        // Список «плохих» имён, которые не несут смысловой нагрузки
-        private static readonly HashSet<string> PoorNames = new HashSet<string>
+        private static readonly HashSet<string> PoorNames = new()
         {
-            "a", "b", "c", "d", "e", "f", "x", "y", "z", "temp", "tmp", "data", "val", "arg"
+            "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m",
+            "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z",
+            "temp", "tmp", "data", "val", "arg", "obj", "var", "item", "x", "y", "z"
         };
 
-        // Находит локальные переменные с такими именами
-        public async Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
+        public Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
         {
             var issues = new List<AnalysisIssue>();
-
             var localVars = root.DescendantNodes()
                 .OfType<VariableDeclaratorSyntax>()
-                .Where(v => v.Ancestors().OfType<LocalDeclarationStatementSyntax>().Any() ||
-                            v.Ancestors().OfType<ForEachStatementSyntax>().Any() ||
-                            v.Ancestors().OfType<CatchDeclarationSyntax>().Any());
+                .Where(v => IsLocalVariable(v));
 
-            foreach (var varDecl in localVars)
+            foreach (var variable in localVars)
             {
-                var name = varDecl.Identifier.Text;
+                var name = variable.Identifier.Text;
                 if (PoorNames.Contains(name))
                 {
-                    var location = varDecl.Identifier.GetLocation();
-                    if (location == null) continue;
-
-                    var lineSpan = location.GetLineSpan();
-                    issues.Add(new AnalysisIssue
+                    var location = variable.Identifier.GetLocation();
+                    if (location != null)
                     {
-                        Severity = "Низкий",
-                        FilePath = filePath,
-                        LineNumber = lineSpan.StartLinePosition.Line + 1,
-                        ColumnNumber = lineSpan.StartLinePosition.Character + 1,
-                        Type = "запах кода",
-                        Code = "NAM003",
-                        Description = $"Имя локальной переменной '{name}' неинформативно. Короткие или общие имена (a, b, tmp, data) снижают читаемость.",
-                        Suggestion = "Дайте переменной осмысленное имя, отражающее её назначение (например, 'index', 'item', 'result').",
-                        RuleName = "PoorLocalVariableName"
-                    });
+                        var lineSpan = location.GetLineSpan();
+                        issues.Add(new AnalysisIssue
+                        {
+                            Severity = "Низкий",
+                            FilePath = filePath,
+                            LineNumber = lineSpan.StartLinePosition.Line + 1,
+                            ColumnNumber = lineSpan.StartLinePosition.Character + 1,
+                            Type = "запах кода",
+                            Code = "NAM003",
+                            Description = $"Имя переменной '{name}' неинформативно и снижает читаемость кода.",
+                            Suggestion = "Используйте осмысленное имя, отражающее назначение переменной (например, 'userIndex', 'totalAmount').",
+                            RuleName = "PoorLocalVariableName"
+                        });
+                    }
                 }
             }
 
-            return issues;
+            return Task.FromResult(issues);
+        }
+
+        private bool IsLocalVariable(VariableDeclaratorSyntax variable)
+        {
+            return variable.Parent is VariableDeclarationSyntax decl &&
+                   decl.Parent is LocalDeclarationStatementSyntax;
         }
     }
 }

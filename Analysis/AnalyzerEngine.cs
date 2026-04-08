@@ -41,15 +41,21 @@ namespace StaticCodeAnalyzer.Analysis
             {
                 var code = await System.IO.File.ReadAllTextAsync(filePath);
                 var tree = CSharpSyntaxTree.ParseText(code, path: filePath);
+                
+                // Полноценный набор метаданных для корректного семантического анализа
                 var compilation = CSharpCompilation.Create("temp")
                     .AddSyntaxTrees(tree)
                     .AddReferences(
                         MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
-                        MetadataReference.CreateFromFile(typeof(Enumerable).Assembly.Location));
+                        MetadataReference.CreateFromFile(typeof(System.Collections.IEnumerable).Assembly.Location),
+                        MetadataReference.CreateFromFile(typeof(System.Linq.Enumerable).Assembly.Location),
+                        MetadataReference.CreateFromFile(typeof(System.Threading.Tasks.Task).Assembly.Location),
+                        MetadataReference.CreateFromFile(typeof(System.Console).Assembly.Location),
+                        MetadataReference.CreateFromFile(typeof(System.Exception).Assembly.Location)
+                    );
 
                 var semanticModel = compilation.GetSemanticModel(tree);
                 var root = await tree.GetRootAsync();
-
                 var issues = new List<AnalysisIssue>();
 
                 foreach (var rule in _rules)

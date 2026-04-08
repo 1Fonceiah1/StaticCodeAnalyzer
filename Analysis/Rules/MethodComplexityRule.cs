@@ -10,16 +10,17 @@ namespace StaticCodeAnalyzer.Analysis
 {
     public class MethodComplexityRule : IAnalyzerRule
     {
-        // Рассчитывает цикломатическую сложность метода и выдаёт предупреждение, если она превышает 10
-        public async Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
+        private const int MaxComplexity = 10;
+
+        public Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
         {
             var issues = new List<AnalysisIssue>();
-
             var methods = root.DescendantNodes().OfType<MethodDeclarationSyntax>();
+
             foreach (var method in methods)
             {
                 int complexity = CalculateCyclomaticComplexity(method);
-                if (complexity > 10)
+                if (complexity > MaxComplexity)
                 {
                     var location = method.Identifier.GetLocation();
                     if (location != null)
@@ -33,32 +34,35 @@ namespace StaticCodeAnalyzer.Analysis
                             ColumnNumber = lineSpan.StartLinePosition.Character + 1,
                             Type = "запах кода",
                             Code = "CPX001",
-                            Description = $"Метод '{method.Identifier.Text}' имеет цикломатическую сложность {complexity}, что превышает рекомендуемый порог 10.",
-                            Suggestion = "Разбейте метод на несколько более мелких.",
+                            Description = $"Метод '{method.Identifier.Text}' имеет цикломатическую сложность {complexity} (порог: {MaxComplexity}).",
+                            Suggestion = "Разбейте метод на несколько меньших или выделите вспомогательные методы.",
                             RuleName = "MethodComplexity"
                         });
                     }
                 }
             }
 
-            return issues;
+            return Task.FromResult(issues);
         }
 
-        // Подсчитывает количество точек ветвления: if, for, foreach, while, case, &&, ||
         private int CalculateCyclomaticComplexity(MethodDeclarationSyntax method)
         {
             var nodes = method.DescendantNodes();
-            int count = 1;
-            count += nodes.OfType<IfStatementSyntax>().Count();
-            count += nodes.OfType<ForStatementSyntax>().Count();
-            count += nodes.OfType<ForEachStatementSyntax>().Count();
-            count += nodes.OfType<WhileStatementSyntax>().Count();
-            count += nodes.OfType<CaseSwitchLabelSyntax>().Count();
-            count += nodes.OfType<ConditionalAccessExpressionSyntax>().Count();
-            count += nodes.OfType<BinaryExpressionSyntax>()
-                .Where(b => b.Kind() == SyntaxKind.LogicalAndExpression || b.Kind() == SyntaxKind.LogicalOrExpression)
-                .Count();
-            return count;
+            int complexity = 1;
+
+            complexity += nodes.OfType<IfStatementSyntax>().Count();
+            complexity += nodes.OfType<ForStatementSyntax>().Count();
+            complexity += nodes.OfType<ForEachStatementSyntax>().Count();
+            complexity += nodes.OfType<WhileStatementSyntax>().Count();
+            complexity += nodes.OfType<DoStatementSyntax>().Count();
+            complexity += nodes.OfType<CaseSwitchLabelSyntax>().Count();
+            complexity += nodes.OfType<CasePatternSwitchLabelSyntax>().Count();
+            complexity += nodes.OfType<ConditionalExpressionSyntax>().Count();
+            complexity += nodes.OfType<BinaryExpressionSyntax>()
+                .Count(b => b.IsKind(SyntaxKind.LogicalAndExpression) || b.IsKind(SyntaxKind.LogicalOrExpression));
+            complexity += nodes.OfType<CatchClauseSyntax>().Count();
+
+            return complexity;
         }
     }
 }

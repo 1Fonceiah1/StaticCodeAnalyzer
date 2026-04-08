@@ -1,4 +1,3 @@
-using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Editing;
@@ -11,49 +10,48 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 {
     public class RefactoringRule_RemoveGoto : IRefactoringRule
     {
-        // Преобразует конструкции с goto в if-else без goto
-        public async Task<Document> ApplyAsync(Document document, CancellationToken cancellationToken)
+        public async Task<Microsoft.CodeAnalysis.Document> ApplyAsync(Microsoft.CodeAnalysis.Document document, CancellationToken cancellationToken)
         {
             var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
             var editor = await DocumentEditor.CreateAsync(document, cancellationToken).ConfigureAwait(false);
             bool changed = false;
 
-            var gotoStatements = root.DescendantNodes().OfType<GotoStatementSyntax>().ToList();
+            var gotoStatements = root.DescendantNodes()
+                .OfType<GotoStatementSyntax>()
+                .ToList();
+
             foreach (var gotoStmt in gotoStatements)
             {
                 var labelName = gotoStmt.Expression?.ToString();
                 if (string.IsNullOrEmpty(labelName)) continue;
 
-                var method = gotoStmt.Ancestors().OfType<MethodDeclarationSyntax>().FirstOrDefault();
-                if (method == null) continue;
+                var method = gotoStmt.FirstAncestorOrSelf<MethodDeclarationSyntax>();
+                if (method?.Body == null) continue;
 
-                var label = method.DescendantNodes().OfType<LabeledStatementSyntax>().FirstOrDefault(l => l.Identifier.Text == labelName);
+                var label = method.DescendantNodes()
+                    .OfType<LabeledStatementSyntax>()
+                    .FirstOrDefault(l => l.Identifier.Text == labelName);
                 if (label == null) continue;
 
-                // Находит окружающий if, который содержит этот goto
-                var ifStmt = gotoStmt.Ancestors().OfType<IfStatementSyntax>().FirstOrDefault();
-                if (ifStmt != null && (ifStmt.Statement == gotoStmt || (ifStmt.Statement is BlockSyntax block && block.Statements.Contains(gotoStmt))))
-                {
-                    // Инвертирует условие
-                    var condition = ifStmt.Condition;
-                    var invertedCondition = SyntaxFactory.PrefixUnaryExpression(SyntaxKind.LogicalNotExpression, SyntaxFactory.ParenthesizedExpression(condition));
+                var parentBlock = label.Parent as BlockSyntax;
+                if (parentBlock == null) continue;
 
-                    // Собирает операторы между if и меткой
-                    var statementsBeforeLabel = new List<SyntaxNode>();
-                    var parent = label.Parent;
-                    if (parent != null)
+                // Простая и надёжная логика: удаляем goto и метку, код между ними остаётся
+                var statements = parentBlock.Statements.ToList();
+                var gotoIndex = statements.IndexOf(gotoStmt);
+                var labelIndex = statements.IndexOf(label);
+
+                if (gotoIndex >= 0 && labelIndex >= 0)
+                {
+                    var newStatements = new List<StatementSyntax>();
+                    for (int i = 0; i < statements.Count; i++)
                     {
-                        statementsBeforeLabel = parent.ChildNodes().TakeWhile(n => n != label).ToList();
+                        if (i == gotoIndex || i == labelIndex) continue;
+                        newStatements.Add(statements[i]);
                     }
 
-                    var newBlock = SyntaxFactory.Block(statementsBeforeLabel.OfType<StatementSyntax>());
-                    var elseBlock = SyntaxFactory.Block(label.Statement);
-
-                    var newIf = SyntaxFactory.IfStatement(invertedCondition, newBlock, SyntaxFactory.ElseClause(elseBlock));
-
-                    editor.ReplaceNode(ifStmt, newIf);
-                    editor.RemoveNode(gotoStmt);
-                    editor.RemoveNode(label);
+                    var newBlock = parentBlock.WithStatements(SyntaxFactory.List(newStatements));
+                    editor.ReplaceNode(parentBlock, newBlock);
                     changed = true;
                 }
             }

@@ -2,6 +2,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Editing;
 using Microsoft.CodeAnalysis.FindSymbols;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -10,7 +11,8 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 {
     public class RefactoringRule_UnusedVariable : IRefactoringRule
     {
-        // Удаляет неиспользуемые локальные переменные
+        public IEnumerable<string> TargetIssueCodes => new[] { "UNU001" };
+
         public async Task<Document> ApplyAsync(Document document, CancellationToken cancellationToken)
         {
             var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
@@ -20,7 +22,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 
             var localVars = root.DescendantNodes()
                 .OfType<VariableDeclaratorSyntax>()
-                .Where(v => v.Ancestors().OfType<LocalDeclarationStatementSyntax>().Any() || v.Ancestors().OfType<ForEachStatementSyntax>().Any())
+                .Where(v => v.Parent is VariableDeclarationSyntax decl && decl.Parent is LocalDeclarationStatementSyntax)
                 .ToList();
 
             foreach (var variable in localVars)
@@ -28,28 +30,38 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                 var symbol = semanticModel.GetDeclaredSymbol(variable, cancellationToken);
                 if (symbol == null) continue;
 
-                // Ищет ссылки на символ
-                var references = await SymbolFinder.FindReferencesAsync(symbol, document.Project.Solution, cancellationToken).ConfigureAwait(false);
-                int refCount = references.SelectMany(r => r.Locations).Count(loc => !loc.IsImplicit);
+                // Ищем ссылки через SymbolFinder с передачей Solution
+                var references = await SymbolFinder.FindReferencesAsync(
+                    symbol, 
+                    document.Project.Solution, 
+                    cancellationToken).ConfigureAwait(false);
 
-                if (refCount == 1)  // только объявление
+                // Считаем только явные использования (не объявление)
+                int usageCount = references
+                    .SelectMany(r => r.Locations)
+                    .Count(loc => !loc.IsImplicit);
+
+                if (usageCount <= 1) // только объявление
                 {
                     var declaration = variable.Parent as VariableDeclarationSyntax;
                     var statement = declaration?.Parent as LocalDeclarationStatementSyntax;
-                    if (statement != null && declaration.Variables.Count == 1)
+                    if (statement == null) continue;
+
+                    if (declaration.Variables.Count == 1)
                     {
+                        // Удаляем всё объявление
                         editor.RemoveNode(statement);
                         changed = true;
                     }
-                    else if (declaration != null && declaration.Variables.Count > 1)
+                    else
                     {
-                        // Удаляет только эту переменную из списка
+                        // Удаляем только эту переменную из списка
                         var newDecl = declaration.RemoveNode(variable, SyntaxRemoveOptions.KeepNoTrivia);
                         if (newDecl is VariableDeclarationSyntax newVarDecl && newVarDecl.Variables.Count == 0)
                         {
                             editor.RemoveNode(statement);
                         }
-                        else
+                        else if (newDecl != null)
                         {
                             editor.ReplaceNode(declaration, newDecl);
                         }

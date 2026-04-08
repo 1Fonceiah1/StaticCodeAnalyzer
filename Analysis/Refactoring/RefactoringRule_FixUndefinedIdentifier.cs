@@ -2,6 +2,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Editing;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -10,7 +11,20 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 {
     public class RefactoringRule_FixUndefinedIdentifier : IRefactoringRule
     {
-        // Находит необъявленные идентификаторы и для некоторых известных имён создаёт приватные константы
+        public IEnumerable<string> TargetIssueCodes => new[] { "UND001" };
+
+        private static readonly Dictionary<string, (string Value, string Type)> CommonConstants = new()
+        {
+            { "max", ("100", "int") },
+            { "limit", ("50", "int") },
+            { "count", ("10", "int") },
+            { "step", ("1", "int") },
+            { "magic", ("42", "int") },
+            { "defaultvalue", ("0", "int") },
+            { "timeout", ("30", "int") },
+            { "buffer", ("1024", "int") }
+        };
+
         public async Task<Document> ApplyAsync(Document document, CancellationToken cancellationToken)
         {
             var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
@@ -18,59 +32,67 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             var editor = await DocumentEditor.CreateAsync(document, cancellationToken).ConfigureAwait(false);
             bool changed = false;
 
-            // Отбирает идентификаторы, которые не являются частью обращения к члену и не объявлены в текущем контексте
-            var identifiers = root.DescendantNodes().OfType<IdentifierNameSyntax>()
-                .Where(id => !(id.Parent is MemberAccessExpressionSyntax) && !IsDeclared(id, semanticModel, cancellationToken))
+            // Находим все идентификаторы, которые не являются частью обращения к члену и не разрешены
+            var undefinedIdentifiers = root.DescendantNodes()
+                .OfType<IdentifierNameSyntax>()
+                .Where(id => !(id.Parent is MemberAccessExpressionSyntax) &&
+                             !(id.Parent is QualifiedNameSyntax) &&
+                             !(id.Parent is UsingDirectiveSyntax) &&
+                             semanticModel.GetSymbolInfo(id, cancellationToken).Symbol == null)
+                .GroupBy(id => id.Identifier.Text)
                 .ToList();
 
-            foreach (var id in identifiers)
+            foreach (var group in undefinedIdentifiers)
             {
-                var containingClass = id.Ancestors().OfType<ClassDeclarationSyntax>().FirstOrDefault();
-                if (containingClass != null)
-                {
-                    var constValue = GuessConstantValue(id.Identifier.Text);
-                    if (constValue.HasValue)
-                    {
-                        // Создаёт приватную константу с предполагаемым значением
-                        var constDecl = SyntaxFactory.FieldDeclaration(
-                            SyntaxFactory.VariableDeclaration(
-                                SyntaxFactory.PredefinedType(SyntaxFactory.Token(SyntaxKind.IntKeyword)),
-                                SyntaxFactory.SingletonSeparatedList(
-                                    SyntaxFactory.VariableDeclarator(id.Identifier.Text)
-                                        .WithInitializer(SyntaxFactory.EqualsValueClause(
-                                            SyntaxFactory.LiteralExpression(SyntaxKind.NumericLiteralExpression, SyntaxFactory.Literal(constValue.Value)))))))
-                            .WithModifiers(SyntaxFactory.TokenList(SyntaxFactory.Token(SyntaxKind.PrivateKeyword), SyntaxFactory.Token(SyntaxKind.ConstKeyword)))
-                            .NormalizeWhitespace();
+                var name = group.Key;
+                var firstOccurrence = group.First();
+                
+                // Ищем содержащий класс
+                var classDecl = firstOccurrence.FirstAncestorOrSelf<ClassDeclarationSyntax>();
+                if (classDecl == null) continue;
 
-                        editor.AddMember(containingClass, constDecl);
-                        changed = true;
-                    }
-                }
+                // Проверяем, не объявлена ли уже константа с таким именем в этом классе
+                var existingMembers = classDecl.Members
+                    .OfType<FieldDeclarationSyntax>()
+                    .SelectMany(f => f.Declaration.Variables)
+                    .Select(v => v.Identifier.Text);
+                
+                if (existingMembers.Contains(name)) continue;
+
+                // Проверяем, есть ли предопределённое значение для этого имени
+                if (!CommonConstants.TryGetValue(name.ToLowerInvariant(), out var constantInfo)) continue;
+
+                var (value, typeName) = constantInfo;
+
+                // Генерируем литерал правильного типа
+                ExpressionSyntax literalValue = typeName switch
+                {
+                    "int" => SyntaxFactory.LiteralExpression(SyntaxKind.NumericLiteralExpression, SyntaxFactory.Literal(int.Parse(value))),
+                    "long" => SyntaxFactory.LiteralExpression(SyntaxKind.NumericLiteralExpression, SyntaxFactory.Literal(long.Parse(value) + "L")),
+                    "double" => SyntaxFactory.LiteralExpression(SyntaxKind.NumericLiteralExpression, SyntaxFactory.Literal(double.Parse(value))),
+                    "string" => SyntaxFactory.LiteralExpression(SyntaxKind.StringLiteralExpression, SyntaxFactory.Literal(value)),
+                    "bool" => SyntaxFactory.LiteralExpression(value.ToLowerInvariant() == "true" ? SyntaxKind.TrueLiteralExpression : SyntaxKind.FalseLiteralExpression),
+                    _ => SyntaxFactory.LiteralExpression(SyntaxKind.NumericLiteralExpression, SyntaxFactory.Literal(int.Parse(value)))
+                };
+
+                // Создаём приватную константу
+                var constField = SyntaxFactory.FieldDeclaration(
+                        SyntaxFactory.VariableDeclaration(
+                            SyntaxFactory.ParseTypeName(typeName),
+                            SyntaxFactory.SingletonSeparatedList(
+                                SyntaxFactory.VariableDeclarator(name)
+                                    .WithInitializer(SyntaxFactory.EqualsValueClause(literalValue)))))
+                    .WithModifiers(SyntaxFactory.TokenList(
+                        SyntaxFactory.Token(SyntaxKind.PrivateKeyword),
+                        SyntaxFactory.Token(SyntaxKind.ConstKeyword)))
+                    .NormalizeWhitespace();
+
+                // Добавляем константу в класс
+                editor.AddMember(classDecl, constField);
+                changed = true;
             }
 
             return changed ? editor.GetChangedDocument() : document;
-        }
-
-        // Проверяет, объявлен ли идентификатор в текущей модели семантики
-        private bool IsDeclared(IdentifierNameSyntax id, SemanticModel model, CancellationToken token)
-        {
-            var symbol = model.GetSymbolInfo(id, token).Symbol;
-            return symbol != null;
-        }
-
-        // Для некоторых часто встречающихся необъявленных имён возвращает предположительное числовое значение
-        private int? GuessConstantValue(string name)
-        {
-            switch (name.ToLower())
-            {
-                case "magic": return 100;
-                case "maxlimit": return 100;
-                case "max": return 100;
-                case "limit": return 10;
-                case "step": return 2;
-                case "count": return 5;
-                default: return null;
-            }
         }
     }
 }

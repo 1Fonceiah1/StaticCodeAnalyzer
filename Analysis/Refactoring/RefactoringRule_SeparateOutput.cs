@@ -2,6 +2,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Editing;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -10,25 +11,32 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 {
     public class RefactoringRule_SeparateOutput : IRefactoringRule
     {
-        // Выделяет прямые вызовы Console.WriteLine в отдельный метод DisplayOutput
+        public IEnumerable<string> TargetIssueCodes => new[] { "SEP001" };
+
         public async Task<Document> ApplyAsync(Document document, CancellationToken cancellationToken)
         {
             var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
             var editor = await DocumentEditor.CreateAsync(document, cancellationToken).ConfigureAwait(false);
             bool changed = false;
 
-            var consoleWrites = root.DescendantNodes().OfType<InvocationExpressionSyntax>()
+            var consoleWrites = root.DescendantNodes()
+                .OfType<InvocationExpressionSyntax>()
                 .Where(inv => inv.Expression is MemberAccessExpressionSyntax ma &&
-                              ma.Expression.ToString() == "Console" &&
+                              ma.Expression is IdentifierNameSyntax { Identifier.Text: "Console" } &&
                               (ma.Name.Identifier.Text == "WriteLine" || ma.Name.Identifier.Text == "Write"))
                 .ToList();
 
             if (!consoleWrites.Any()) return document;
 
-            var classDecl = consoleWrites.First().Ancestors().OfType<ClassDeclarationSyntax>().FirstOrDefault();
+            var classDecl = consoleWrites.First().FirstAncestorOrSelf<ClassDeclarationSyntax>();
             if (classDecl == null) return document;
 
-            // Создаёт метод DisplayOutput, если его ещё нет
+            // Проверяем, есть ли уже метод с таким именем
+            var existingMethods = classDecl.Members.OfType<MethodDeclarationSyntax>();
+            if (existingMethods.Any(m => m.Identifier.Text == "DisplayOutput"))
+                return document;
+
+            // Создаём метод DisplayOutput
             var outputMethod = SyntaxFactory.MethodDeclaration(
                     SyntaxFactory.PredefinedType(SyntaxFactory.Token(SyntaxKind.VoidKeyword)),
                     "DisplayOutput")
@@ -49,14 +57,10 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                                     SyntaxFactory.Argument(SyntaxFactory.IdentifierName("message"))))))))
                 .NormalizeWhitespace();
 
-            var existing = classDecl.Members.OfType<MethodDeclarationSyntax>().Any(m => m.Identifier.Text == "DisplayOutput");
-            if (!existing)
-            {
-                editor.AddMember(classDecl, outputMethod);
-                changed = true;
-            }
+            editor.AddMember(classDecl, outputMethod);
+            changed = true;
 
-            // Заменяет каждый вызов Console.WriteLine на вызов DisplayOutput
+            // Заменяем вызовы Console.WriteLine на DisplayOutput
             foreach (var write in consoleWrites)
             {
                 var arg = write.ArgumentList.Arguments.FirstOrDefault();

@@ -3,6 +3,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Text;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using StaticCodeAnalyzer.Analysis.Refactoring;
 
@@ -16,21 +17,30 @@ namespace StaticCodeAnalyzer.Analysis
         {
             _rules = new List<IRefactoringRule>
             {
-                new RefactoringRule_NamingConvention(),
+                // Простые замены (не меняют структуру)
                 new RefactoringRule_EmptyCatchBlock(),
-                new RefactoringRule_RemoveDuplicates(),         // объединённое правило
-                new RefactoringRule_RemoveGoto(),
-                new RefactoringRule_AsyncAwait(),
-                new RefactoringRule_UnusedVariable(),
-                new RefactoringRule_DisposableFields(),
                 new RefactoringRule_MagicNumbers(),
-                new RefactoringRule_EncapsulateFields(),
+                new RefactoringRule_FixUndefinedIdentifier(),
+                
+                // Переименования (до инкапсуляции)
+                new RefactoringRule_NamingConvention(),
                 new RefactoringRule_RenameLocalVariables(),
+                
+                // Структурные изменения
+                new RefactoringRule_EncapsulateFields(),
+                new RefactoringRule_DisposableFields(),
+                new RefactoringRule_ThreadSafety(),
+                
+                // Оптимизации и рефакторинг
+                new RefactoringRule_RemoveDuplicates(),
                 new RefactoringRule_RemoveDuplicateCalls(),
+                new RefactoringRule_RemoveGoto(),
                 new RefactoringRule_SeparateOutput(),
                 new RefactoringRule_SplitMethodByResponsibility(),
-                new RefactoringRule_FixUndefinedIdentifier(),
-                new RefactoringRule_ThreadSafety()
+                
+                // Асинхронность (в конце, меняет сигнатуры)
+                new RefactoringRule_AsyncAwait(),
+                new RefactoringRule_UnusedVariable()
             };
         }
 
@@ -38,44 +48,77 @@ namespace StaticCodeAnalyzer.Analysis
         {
             return new HashSet<string>
             {
-                "NAM001", "NAM002", "ERR001", "ASY001", "UNU001", "DISP001", "MAG001", "GOTO001", "DUPL001",
-                "ENC001", "REN001", "EXT001", "SEP001", "SPL001", "DUP002", "UND001", "THR001"
+                "NAM001", "NAM002", "NAM003",
+                "ERR001",
+                "ASY001",
+                "UNU001",
+                "DISP001",
+                "MAG001",
+                "GOTO001",
+                "DUP001", "DUP002",
+                "ENC001",
+                "REN001",
+                "SEP001",
+                "SPL001",
+                "UND001",
+                "THR001",
+                "CPX001"
             };
         }
 
         public async Task<string> ApplyRefactoringAsync(string code)
         {
-            var workspace = new AdhocWorkspace();
-            var projectInfo = ProjectInfo.Create(
-                ProjectId.CreateNewId(),
-                VersionStamp.Create(),
-                "TempProject",
-                "TempProject",
-                LanguageNames.CSharp)
-                .WithMetadataReferences(GetDefaultMetadataReferences())
-                .WithCompilationOptions(new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
-
-            var project = workspace.AddProject(projectInfo);
-            var document = workspace.AddDocument(project.Id, "TempDocument.cs", SourceText.From(code));
-
-            foreach (var rule in _rules)
+            try
             {
-                try
+                var workspace = new AdhocWorkspace();
+                var projectInfo = ProjectInfo.Create(
+                    ProjectId.CreateNewId(),
+                    VersionStamp.Create(),
+                    "TempProject",
+                    "TempProject",
+                    LanguageNames.CSharp)
+                    .WithMetadataReferences(GetDefaultMetadataReferences())
+                    .WithCompilationOptions(new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+                var project = workspace.AddProject(projectInfo);
+                var document = workspace.AddDocument(project.Id, "TempDocument.cs", SourceText.From(code));
+
+                // Применяем правила по порядку
+                foreach (var rule in _rules)
                 {
-                    var newDocument = await rule.ApplyAsync(document).ConfigureAwait(false);
-                    if (newDocument != document)
+                    try
                     {
-                        document = newDocument;
+                        var newDocument = await rule.ApplyAsync(document).ConfigureAwait(false);
+                        if (newDocument != document)
+                        {
+                            document = newDocument;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Error in {rule.GetType().Name}: {ex.Message}");
+                        // Продолжаем выполнение, не прерываем весь процесс
                     }
                 }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"Error in {rule.GetType().Name}: {ex.Message}");
-                }
-            }
 
-            var finalRoot = await document.GetSyntaxRootAsync().ConfigureAwait(false);
-            return finalRoot.ToFullString();
+                // Финальная нормализация всего дерева
+                var finalRoot = await document.GetSyntaxRootAsync().ConfigureAwait(false);
+                if (finalRoot != null)
+                {
+                    var normalized = finalRoot.NormalizeWhitespace(
+                        indentation: "    ",
+                        elasticTrivia: true,
+                        eol: "\n");
+                    return normalized.ToFullString();
+                }
+
+                return code;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"RefactoringEngine error: {ex.Message}");
+                return code; // Возвращаем исходный код при ошибке
+            }
         }
 
         private static IEnumerable<MetadataReference> GetDefaultMetadataReferences()
@@ -83,11 +126,13 @@ namespace StaticCodeAnalyzer.Analysis
             return new[]
             {
                 MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
-                MetadataReference.CreateFromFile(typeof(System.Collections.Generic.IEnumerable<>).Assembly.Location),
+                MetadataReference.CreateFromFile(typeof(System.Collections.IEnumerable).Assembly.Location),
+                MetadataReference.CreateFromFile(typeof(System.Linq.Enumerable).Assembly.Location),
                 MetadataReference.CreateFromFile(typeof(System.Threading.Tasks.Task).Assembly.Location),
-                MetadataReference.CreateFromFile(typeof(System.Runtime.GCSettings).Assembly.Location),
                 MetadataReference.CreateFromFile(typeof(System.Console).Assembly.Location),
-                MetadataReference.CreateFromFile(typeof(System.Linq.Enumerable).Assembly.Location)
+                MetadataReference.CreateFromFile(typeof(System.Exception).Assembly.Location),
+                MetadataReference.CreateFromFile(typeof(System.Runtime.GCSettings).Assembly.Location),
+                MetadataReference.CreateFromFile(typeof(System.IO.Stream).Assembly.Location)
             };
         }
     }

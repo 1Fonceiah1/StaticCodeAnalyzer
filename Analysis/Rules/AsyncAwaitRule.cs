@@ -10,18 +10,19 @@ namespace StaticCodeAnalyzer.Analysis
 {
     public class AsyncAwaitRule : IAnalyzerRule
     {
-        // Находит асинхронные методы без оператора await
-        public async Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
+        public Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
         {
             var issues = new List<AnalysisIssue>();
-            // Ищет все методы с модификатором async
-            var asyncMethods = root.DescendantNodes().OfType<MethodDeclarationSyntax>()
+            var asyncMethods = root.DescendantNodes()
+                .OfType<MethodDeclarationSyntax>()
                 .Where(m => m.Modifiers.Any(SyntaxKind.AsyncKeyword));
 
             foreach (var method in asyncMethods)
             {
-                // Проверяет, есть ли внутри метода await
-                bool hasAwait = method.DescendantNodes().OfType<AwaitExpressionSyntax>().Any();
+                bool hasAwait = method.DescendantNodes()
+                    .OfType<AwaitExpressionSyntax>()
+                    .Any();
+
                 if (!hasAwait)
                 {
                     var location = method.Identifier.GetLocation();
@@ -37,14 +38,14 @@ namespace StaticCodeAnalyzer.Analysis
                             Type = "предупреждение",
                             Code = "ASY001",
                             Description = $"Асинхронный метод '{method.Identifier.Text}' не содержит операторов await.",
-                            Suggestion = "Удалите модификатор async, если метод не является асинхронным.",
+                            Suggestion = "Удалите модификатор async или добавьте await для асинхронных операций.",
                             RuleName = "AsyncAwaitUsage"
                         });
                     }
                 }
             }
 
-            return issues;
+            return Task.FromResult(issues);
         }
     }
 }

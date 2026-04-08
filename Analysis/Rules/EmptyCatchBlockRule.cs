@@ -9,18 +9,16 @@ namespace StaticCodeAnalyzer.Analysis
 {
     public class EmptyCatchBlockRule : IAnalyzerRule
     {
-        // Находит блоки catch, у которых нет операторов в теле
-        public async Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
+        public Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
         {
             var issues = new List<AnalysisIssue>();
+            var catchClauses = root.DescendantNodes().OfType<CatchClauseSyntax>();
 
-            var catchBlocks = root.DescendantNodes().OfType<CatchClauseSyntax>();
-            foreach (var catchBlock in catchBlocks)
+            foreach (var catchClause in catchClauses)
             {
-                var block = catchBlock.Block;
-                if (block == null || block.Statements.Count == 0)
+                if (catchClause.Block == null || catchClause.Block.Statements.Count == 0)
                 {
-                    var location = catchBlock.GetLocation();
+                    var location = catchClause.CatchKeyword.GetLocation();
                     if (location != null)
                     {
                         var lineSpan = location.GetLineSpan();
@@ -32,15 +30,15 @@ namespace StaticCodeAnalyzer.Analysis
                             ColumnNumber = lineSpan.StartLinePosition.Character + 1,
                             Type = "ошибка",
                             Code = "ERR001",
-                            Description = "Пустой блок catch молча подавляет исключения.",
-                            Suggestion = "Запишите исключение в лог или обработайте его.",
+                            Description = "Пустой блок catch подавляет исключения без обработки.",
+                            Suggestion = "Добавьте логирование, повторный выброс или корректную обработку исключения.",
                             RuleName = "EmptyCatchBlocks"
                         });
                     }
                 }
             }
 
-            return issues;
+            return Task.FromResult(issues);
         }
     }
 }

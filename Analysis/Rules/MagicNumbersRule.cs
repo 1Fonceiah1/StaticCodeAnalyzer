@@ -10,60 +10,57 @@ namespace StaticCodeAnalyzer.Analysis
 {
     public class MagicNumbersRule : IAnalyzerRule
     {
-        // Находит числовые литералы, кроме 0,1,-1 и их аналогов с плавающей точкой
-        public async Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
+        private static readonly HashSet<string> AllowedLiterals = new()
+        {
+            "0", "1", "-1", "0.0", "1.0", "0f", "1f", "-1f", "0.0f", "1.0f",
+            "0d", "1d", "0m", "1m", "true", "false", "null"
+        };
+
+        public Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
         {
             var issues = new List<AnalysisIssue>();
+            var literals = root.DescendantNodes()
+                .OfType<LiteralExpressionSyntax>()
+                .Where(l => l.IsKind(SyntaxKind.NumericLiteralExpression))
+                .Where(l => !IsAllowed(l) && !IsInConstContext(l));
 
-            var numbers = root.DescendantNodes().OfType<LiteralExpressionSyntax>()
-                .Where(l => l.Kind() == SyntaxKind.NumericLiteralExpression)
-                .Where(l => !IsAllowedMagicNumber(l));
-
-            foreach (var num in numbers)
+            foreach (var literal in literals)
             {
-                // Пропускает числа, объявленные внутри констант
-                bool isConst = false;
-                var parent = num.Parent;
-                while (parent != null && !(parent is FieldDeclarationSyntax || parent is LocalDeclarationStatementSyntax))
-                    parent = parent.Parent;
-
-                if (parent is FieldDeclarationSyntax field && field.Modifiers.Any(SyntaxKind.ConstKeyword))
-                    isConst = true;
-                if (parent is LocalDeclarationStatementSyntax local && local.Declaration.Variables.Any(v => v.Initializer?.Value == num) && local.Modifiers.Any(SyntaxKind.ConstKeyword))
-                    isConst = true;
-
-                if (!isConst)
+                var location = literal.GetLocation();
+                if (location != null)
                 {
-                    var location = num.GetLocation();
-                    if (location != null)
+                    var lineSpan = location.GetLineSpan();
+                    issues.Add(new AnalysisIssue
                     {
-                        var lineSpan = location.GetLineSpan();
-                        issues.Add(new AnalysisIssue
-                        {
-                            Severity = "Низкий",
-                            FilePath = filePath,
-                            LineNumber = lineSpan.StartLinePosition.Line + 1,
-                            ColumnNumber = lineSpan.StartLinePosition.Character + 1,
-                            Type = "запах кода",
-                            Code = "MAG001",
-                            Description = $"Найдено магическое число '{num.Token.Text}'. Жёстко заданные числа снижают читаемость и усложняют поддержку.",
-                            Suggestion = "Замените на именованную константу.",
-                            RuleName = "MagicNumbers"
-                        });
-                    }
+                        Severity = "Низкий",
+                        FilePath = filePath,
+                        LineNumber = lineSpan.StartLinePosition.Line + 1,
+                        ColumnNumber = lineSpan.StartLinePosition.Character + 1,
+                        Type = "запах кода",
+                        Code = "MAG001",
+                        Description = $"Магическое число '{literal.Token.Text}' снижает читаемость кода.",
+                        Suggestion = "Замените на именованную константу с понятным именем.",
+                        RuleName = "MagicNumbers"
+                    });
                 }
             }
 
-            return issues;
+            return Task.FromResult(issues);
         }
 
-        // Возвращает true, если число относится к разрешённым (0,1,-1,0.0,1.0)
-        private bool IsAllowedMagicNumber(LiteralExpressionSyntax literal)
+        private bool IsAllowed(LiteralExpressionSyntax literal)
         {
-            var text = literal.Token.Text;
-            if (text == "0" || text == "1" || text == "-1" || text == "0.0" || text == "1.0")
-                return true;
-            return false;
+            return AllowedLiterals.Contains(literal.Token.Text);
+        }
+
+        private bool IsInConstContext(LiteralExpressionSyntax literal)
+        {
+            return literal.Ancestors().Any(a =>
+                a is FieldDeclarationSyntax f && f.Modifiers.Any(SyntaxKind.ConstKeyword) ||
+                a is LocalDeclarationStatementSyntax l && l.Modifiers.Any(SyntaxKind.ConstKeyword) ||
+                a is EnumMemberDeclarationSyntax ||
+                a is AttributeSyntax ||
+                (a is ParameterSyntax p && p.Default?.Value == literal));
         }
     }
 }

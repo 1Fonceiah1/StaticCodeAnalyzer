@@ -9,44 +9,51 @@ namespace StaticCodeAnalyzer.Analysis
 {
     public class DuplicateMethodCallsRule : IAnalyzerRule
     {
-        public async Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
+        public Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
         {
             var issues = new List<AnalysisIssue>();
-
             var methods = root.DescendantNodes().OfType<MethodDeclarationSyntax>();
+
             foreach (var method in methods)
             {
                 if (method.Body == null) continue;
 
-                var statements = method.Body.Statements.ToList();
-                // Ищет подряд идущие одинаковые вызовы (простое дублирование)
+                var statements = method.Body.Statements.OfType<ExpressionStatementSyntax>().ToList();
                 for (int i = 0; i < statements.Count - 1; i++)
                 {
-                    if (statements[i] is ExpressionStatementSyntax firstStmt &&
-                        statements[i + 1] is ExpressionStatementSyntax secondStmt &&
-                        firstStmt.Expression.ToString() == secondStmt.Expression.ToString())
-                    {
-                        var location = secondStmt.GetLocation();
-                        if (location == null) continue;
+                    var expr1 = statements[i].Expression.ToString();
+                    var expr2 = statements[i + 1].Expression.ToString();
 
-                        var lineSpan = location.GetLineSpan();
-                        issues.Add(new AnalysisIssue
+                    if (expr1 == expr2 && !IsSideEffectFree(expr1))
+                    {
+                        var location = statements[i + 1].GetLocation();
+                        if (location != null)
                         {
-                            Severity = "Низкий",
-                            FilePath = filePath,
-                            LineNumber = lineSpan.StartLinePosition.Line + 1,
-                            ColumnNumber = lineSpan.StartLinePosition.Character + 1,
-                            Type = "запах кода",
-                            Code = "DUP002",
-                            Description = $"Обнаружен повторяющийся вызов метода '{firstStmt.Expression.ToString()}' (дважды подряд).",
-                            Suggestion = "Удалите лишний вызов или сохраните результат в переменную, если метод имеет побочные эффекты и должен быть вызван дважды.",
-                            RuleName = "DuplicateMethodCalls"
-                        });
+                            var lineSpan = location.GetLineSpan();
+                            issues.Add(new AnalysisIssue
+                            {
+                                Severity = "Низкий",
+                                FilePath = filePath,
+                                LineNumber = lineSpan.StartLinePosition.Line + 1,
+                                ColumnNumber = lineSpan.StartLinePosition.Character + 1,
+                                Type = "запах кода",
+                                Code = "DUP002",
+                                Description = $"Повторяющийся вызов '{expr1}' подряд. Возможно, это избыточно.",
+                                Suggestion = "Сохраните результат в переменную или удалите дублирующий вызов.",
+                                RuleName = "DuplicateMethodCalls"
+                            });
+                        }
                     }
                 }
             }
 
-            return issues;
+            return Task.FromResult(issues);
+        }
+
+        private bool IsSideEffectFree(string expression)
+        {
+            var pureMethods = new[] { "ToString", "GetHashCode", "Equals", "CompareTo" };
+            return pureMethods.Any(m => expression.Contains(m));
         }
     }
 }

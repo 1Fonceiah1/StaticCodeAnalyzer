@@ -11,7 +11,6 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 {
     public class RefactoringRule_NamingConvention : IRefactoringRule
     {
-        // Приводит имена классов и методов к PascalCase, приватные поля к _camelCase
         public async Task<Document> ApplyAsync(Document document, CancellationToken cancellationToken)
         {
             var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
@@ -19,44 +18,49 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             var solution = document.Project.Solution;
             bool changed = false;
 
-            // Переименование классов
-            var classes = root.DescendantNodes().OfType<ClassDeclarationSyntax>();
-            foreach (var classDecl in classes)
-            {
-                var symbol = semanticModel.GetDeclaredSymbol(classDecl, cancellationToken);
-                if (symbol != null && !IsPascalCase(symbol.Name))
-                {
-                    var newName = ToPascalCase(symbol.Name);
-                    solution = await Renamer.RenameSymbolAsync(solution, symbol, new SymbolRenameOptions(), newName, cancellationToken);
-                    changed = true;
-                }
-            }
-
-            // Переименование методов (кроме переопределённых и явно реализованных интерфейсов)
-
+            // Переименование методов в PascalCase
             var methods = root.DescendantNodes().OfType<MethodDeclarationSyntax>();
             foreach (var method in methods)
             {
                 var symbol = semanticModel.GetDeclaredSymbol(method, cancellationToken);
-                if (symbol != null && !IsPascalCase(symbol.Name) && !symbol.IsOverride && !symbol.ExplicitInterfaceImplementations.Any())
+                if (symbol == null) continue;
+                
+                // Пропускаем переопределённые методы и явные реализации интерфейсов
+                if (symbol.IsOverride || symbol.ExplicitInterfaceImplementations.Any()) continue;
+                
+                string current = symbol.Name;
+                if (!IsPascalCase(current))
                 {
-                    var newName = ToPascalCase(symbol.Name);
-                    solution = await Renamer.RenameSymbolAsync(solution, symbol, new SymbolRenameOptions(), newName, cancellationToken);
+                    string target = ToPascalCase(current);
+                    // Проверяем, нет ли конфликта имён
+                    var containingType = method.FirstAncestorOrSelf<TypeDeclarationSyntax>();
+                    if (containingType != null && HasNameConflict(target, containingType, semanticModel, cancellationToken))
+                        continue;
+                    
+                    solution = await Renamer.RenameSymbolAsync(solution, symbol, new SymbolRenameOptions(), target, cancellationToken);
                     changed = true;
                 }
             }
 
             // Переименование приватных полей в _camelCase
             var fields = root.DescendantNodes().OfType<FieldDeclarationSyntax>()
-                .SelectMany(f => f.Declaration.Variables)
-                .Where(v => v.Parent?.Parent is FieldDeclarationSyntax fieldDecl && fieldDecl.Modifiers.Any(SyntaxKind.PrivateKeyword) && !fieldDecl.Modifiers.Any(SyntaxKind.ConstKeyword));
-            foreach (var fieldVar in fields)
+                .Where(f => f.Modifiers.Any(m => m.IsKind(SyntaxKind.PrivateKeyword)) && !f.Modifiers.Any(m => m.IsKind(SyntaxKind.ConstKeyword)))
+                .SelectMany(f => f.Declaration.Variables);
+
+            foreach (var varDecl in fields)
             {
-                var symbol = semanticModel.GetDeclaredSymbol(fieldVar, cancellationToken);
-                if (symbol != null && !IsCamelCaseWithUnderscore(symbol.Name))
+                var symbol = semanticModel.GetDeclaredSymbol(varDecl, cancellationToken);
+                if (symbol == null) continue;
+
+                string current = symbol.Name;
+                if (!IsPrivateFieldConvention(current))
                 {
-                    var newName = ToCamelCaseWithUnderscore(symbol.Name);
-                    solution = await Renamer.RenameSymbolAsync(solution, symbol, new SymbolRenameOptions(), newName, cancellationToken);
+                    string target = ToPrivateFieldConvention(current);
+                    var containingType = varDecl.FirstAncestorOrSelf<TypeDeclarationSyntax>();
+                    if (containingType != null && HasNameConflict(target, containingType, semanticModel, cancellationToken))
+                        continue;
+                    
+                    solution = await Renamer.RenameSymbolAsync(solution, symbol, new SymbolRenameOptions(), target, cancellationToken);
                     changed = true;
                 }
             }
@@ -64,13 +68,19 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             return changed ? solution.GetDocument(document.Id) : document;
         }
 
-        private bool IsPascalCase(string name) => name.Length > 0 && char.IsUpper(name[0]);
-        private string ToPascalCase(string name) => char.ToUpperInvariant(name[0]) + (name.Length > 1 ? name.Substring(1) : "");
-        private bool IsCamelCaseWithUnderscore(string name) => name.StartsWith("_") && name.Length > 1 && char.IsLower(name[1]);
-        private string ToCamelCaseWithUnderscore(string name)
+        private bool IsPascalCase(string n) => n.Length > 0 && char.IsUpper(n[0]) && !n.Contains('_');
+        private string ToPascalCase(string n) => char.ToUpperInvariant(n[0]) + (n.Length > 1 ? n.Substring(1) : "");
+        private bool IsPrivateFieldConvention(string n) => n.StartsWith("_") && n.Length > 1 && char.IsLower(n[1]);
+        private string ToPrivateFieldConvention(string n) => n.StartsWith("_") ? n : "_" + char.ToLowerInvariant(n[0]) + (n.Length > 1 ? n.Substring(1) : "");
+        
+        private bool HasNameConflict(string newName, TypeDeclarationSyntax typeDecl, SemanticModel model, CancellationToken ct)
         {
-            if (name.StartsWith("_")) return name;
-            return "_" + char.ToLowerInvariant(name[0]) + (name.Length > 1 ? name.Substring(1) : "");
+            return typeDecl.Members
+                .OfType<MemberDeclarationSyntax>()
+                .Any(m => m is BaseTypeDeclarationSyntax baseType && baseType.Identifier.Text == newName ||
+                          m is FieldDeclarationSyntax field && field.Declaration.Variables.Any(v => v.Identifier.Text == newName) ||
+                          m is PropertyDeclarationSyntax prop && prop.Identifier.Text == newName ||
+                          m is MethodDeclarationSyntax method && method.Identifier.Text == newName);
         }
     }
 }

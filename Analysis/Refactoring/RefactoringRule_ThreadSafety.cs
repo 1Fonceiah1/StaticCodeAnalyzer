@@ -11,18 +11,18 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 {
     public class RefactoringRule_ThreadSafety : IRefactoringRule
     {
+        public IEnumerable<string> TargetIssueCodes => new[] { "THR001" };
+
         public async Task<Document> ApplyAsync(Document document, CancellationToken cancellationToken)
         {
             var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
-            var semanticModel = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
             var editor = await DocumentEditor.CreateAsync(document, cancellationToken).ConfigureAwait(false);
             bool changed = false;
 
-            var classes = root.DescendantNodes().OfType<ClassDeclarationSyntax>();
-
+            var classes = root.DescendantNodes().OfType<ClassDeclarationSyntax>().ToList();
             foreach (var classDecl in classes)
             {
-                // Ищет изменяемые поля (не readonly, не const)
+                // Находим изменяемые поля
                 var mutableFields = classDecl.Members
                     .OfType<FieldDeclarationSyntax>()
                     .Where(f => !f.Modifiers.Any(SyntaxKind.ReadOnlyKeyword) && !f.Modifiers.Any(SyntaxKind.ConstKeyword))
@@ -31,22 +31,22 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 
                 if (!mutableFields.Any()) continue;
 
-                // Проверяет, есть ли уже поле _lock
-                bool hasLockField = classDecl.Members
+                // Проверяем наличие поля _lock
+                bool hasLock = classDecl.Members
                     .OfType<FieldDeclarationSyntax>()
                     .SelectMany(f => f.Declaration.Variables)
                     .Any(v => v.Identifier.Text == "_lock");
 
-                if (!hasLockField)
+                if (!hasLock)
                 {
                     var lockField = SyntaxFactory.FieldDeclaration(
-                        SyntaxFactory.VariableDeclaration(
-                            SyntaxFactory.ParseTypeName("object"),
-                            SyntaxFactory.SingletonSeparatedList(
-                                SyntaxFactory.VariableDeclarator("_lock")
-                                    .WithInitializer(SyntaxFactory.EqualsValueClause(
-                                        SyntaxFactory.ObjectCreationExpression(SyntaxFactory.ParseTypeName("object"))
-                                            .WithArgumentList(SyntaxFactory.ArgumentList()))))))
+                            SyntaxFactory.VariableDeclaration(
+                                SyntaxFactory.ParseTypeName("object"),
+                                SyntaxFactory.SingletonSeparatedList(
+                                    SyntaxFactory.VariableDeclarator("_lock")
+                                        .WithInitializer(SyntaxFactory.EqualsValueClause(
+                                            SyntaxFactory.ObjectCreationExpression(SyntaxFactory.ParseTypeName("object"))
+                                                .WithArgumentList(SyntaxFactory.ArgumentList()))))))
                         .WithModifiers(SyntaxFactory.TokenList(
                             SyntaxFactory.Token(SyntaxKind.PrivateKeyword),
                             SyntaxFactory.Token(SyntaxKind.ReadOnlyKeyword)))
@@ -56,22 +56,26 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                     changed = true;
                 }
 
-                // Найходит публичные методы, которые используют изменяемые поля
-                var methods = classDecl.Members.OfType<MethodDeclarationSyntax>()
-                    .Where(m => m.Modifiers.Any(SyntaxKind.PublicKeyword) && m.Body != null);
+                // Находим публичные не-async методы, использующие изменяемые поля
+                var methods = classDecl.Members
+                    .OfType<MethodDeclarationSyntax>()
+                    .Where(m => m.Modifiers.Any(SyntaxKind.PublicKeyword) && 
+                               m.Body != null && 
+                               !m.Modifiers.Any(SyntaxKind.AsyncKeyword));
 
                 foreach (var method in methods)
                 {
-                    bool usesMutableField = method.DescendantNodes()
+                    bool usesMutable = method.DescendantNodes()
                         .OfType<IdentifierNameSyntax>()
                         .Any(id => mutableFields.Any(f => f.Identifier.Text == id.Identifier.Text));
 
-                    if (usesMutableField && !IsAlreadyLocked(method))
+                    if (usesMutable && !IsAlreadyLocked(method))
                     {
                         var newBody = SyntaxFactory.Block(
                             SyntaxFactory.LockStatement(
                                 SyntaxFactory.IdentifierName("_lock"),
                                 method.Body));
+
                         var newMethod = method.WithBody(newBody);
                         editor.ReplaceNode(method, newMethod);
                         changed = true;
@@ -82,12 +86,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             return changed ? editor.GetChangedDocument() : document;
         }
 
-        private bool IsAlreadyLocked(MethodDeclarationSyntax method)
-        {
-            // Проверяет, не обёрнут ли уже метод в lock
-            if (method.Body?.Statements.FirstOrDefault() is LockStatementSyntax)
-                return true;
-            return false;
-        }
+        private bool IsAlreadyLocked(MethodDeclarationSyntax method) =>
+            method.Body?.Statements.FirstOrDefault() is LockStatementSyntax;
     }
 }

@@ -11,13 +11,15 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 {
     public class RefactoringRule_RenameLocalVariables : IRefactoringRule
     {
-        // Список «плохих» имён, которые следует заменить
-        private static readonly HashSet<string> BadNames = new HashSet<string>
+        public IEnumerable<string> TargetIssueCodes => new[] { "NAM003", "REN001" };
+
+        private static readonly HashSet<string> PoorNames = new()
         {
-            "a", "b", "c", "d", "e", "f", "x", "y", "z", "temp", "tmp", "data", "val", "arg"
+            "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m",
+            "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z",
+            "temp", "tmp", "data", "val", "arg", "obj", "var", "item"
         };
 
-        // Переименовывает локальные переменные с плохими именами на более осмысленные, исходя из контекста
         public async Task<Document> ApplyAsync(Document document, CancellationToken cancellationToken)
         {
             var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
@@ -27,77 +29,78 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 
             var localVars = root.DescendantNodes()
                 .OfType<VariableDeclaratorSyntax>()
-                .Where(v => v.Ancestors().OfType<LocalDeclarationStatementSyntax>().Any() ||
-                            v.Ancestors().OfType<ForEachStatementSyntax>().Any() ||
-                            v.Ancestors().OfType<CatchDeclarationSyntax>().Any())
+                .Where(v => v.Parent is VariableDeclarationSyntax decl && decl.Parent is LocalDeclarationStatementSyntax)
                 .ToList();
 
             foreach (var variable in localVars)
             {
                 var symbol = semanticModel.GetDeclaredSymbol(variable, cancellationToken);
                 if (symbol == null) continue;
-                if (!BadNames.Contains(symbol.Name)) continue;
 
-                string newName = SuggestBetterName(variable, semanticModel, cancellationToken);
-                if (string.IsNullOrEmpty(newName) || newName == symbol.Name) continue;
+                var currentName = symbol.Name;
+                if (!PoorNames.Contains(currentName)) continue;
 
-                solution = await Renamer.RenameSymbolAsync(solution, symbol, new SymbolRenameOptions(), newName, cancellationToken);
+                var newName = SuggestBetterName(variable, semanticModel, cancellationToken);
+                if (string.IsNullOrEmpty(newName) || newName == currentName) continue;
+
+                // Проверка: нет ли конфликта имён в текущей области
+                var method = variable.FirstAncestorOrSelf<MethodDeclarationSyntax>();
+                if (method != null && HasNameConflict(newName, method, semanticModel, cancellationToken))
+                    continue;
+
+                solution = await Renamer.RenameSymbolAsync(
+                    solution, 
+                    symbol, 
+                    new SymbolRenameOptions(), 
+                    newName, 
+                    cancellationToken);
                 changed = true;
             }
 
             return changed ? solution.GetDocument(document.Id) : document;
         }
 
-        // Предлагает новое имя на основе контекста: счётчик цикла, тип, инициализатор и т.д.
-        private string SuggestBetterName(VariableDeclaratorSyntax variable, SemanticModel semanticModel, CancellationToken cancellationToken)
+        private string SuggestBetterName(VariableDeclaratorSyntax variable, SemanticModel semanticModel, CancellationToken ct)
         {
-            // Если переменная используется как счётчик в for
-            var forLoop = variable.FirstAncestorOrSelf<ForStatementSyntax>();
-            if (forLoop != null && forLoop.Declaration?.Variables.Any(v => v.Identifier.Text == variable.Identifier.Text) == true)
+            // Счётчик цикла
+            if (variable.FirstAncestorOrSelf<ForStatementSyntax>() != null)
                 return "index";
 
-            // Если переменная в foreach
-            var forEach = variable.FirstAncestorOrSelf<ForEachStatementSyntax>();
-            if (forEach != null && forEach.Identifier.Text == variable.Identifier.Text)
+            // Элемент коллекции
+            if (variable.FirstAncestorOrSelf<ForEachStatementSyntax>() != null)
                 return "item";
 
-            // По типу переменной
-            var declaration = variable.Parent as VariableDeclarationSyntax;
-            if (declaration?.Type != null)
+            // По типу
+            var decl = variable.Parent as VariableDeclarationSyntax;
+            if (decl?.Type != null)
             {
-                string typeName = declaration.Type.ToString().ToLower();
-                if (typeName.Contains("int") || typeName.Contains("long") || typeName.Contains("double") || typeName.Contains("decimal"))
-                    return "number";
-                if (typeName.Contains("string"))
-                    return "text";
-                if (typeName.Contains("list") || typeName.Contains("ienumerable") || typeName.Contains("array"))
-                    return "items";
-                if (typeName.Contains("bool"))
-                    return "flag";
+                var typeName = decl.Type.ToString().ToLowerInvariant();
+                if (typeName.Contains("int") || typeName.Contains("long")) return "number";
+                if (typeName.Contains("string")) return "text";
+                if (typeName.Contains("list") || typeName.Contains("array") || typeName.Contains("ienumerable")) return "items";
+                if (typeName.Contains("bool")) return "flag";
+                if (typeName.Contains("datetime")) return "timestamp";
             }
 
             // По инициализатору
-            if (variable.Initializer?.Value is LiteralExpressionSyntax literal)
+            if (variable.Initializer?.Value is LiteralExpressionSyntax lit)
             {
-                if (literal.Token.Value is int)
-                    return "value";
-                if (literal.Token.Value is string)
-                    return "message";
+                if (lit.Token.Value is int) return "value";
+                if (lit.Token.Value is string) return "message";
             }
 
-            // Если инициализируется результатом вызова метода
+            // Результат вызова метода
             if (variable.Initializer?.Value is InvocationExpressionSyntax)
                 return "result";
 
-            // Если используется в арифметической операции
-            var usage = variable.FirstAncestorOrSelf<MethodDeclarationSyntax>()?
-                .DescendantNodes().OfType<IdentifierNameSyntax>()
-                .Where(id => id.Identifier.Text == variable.Identifier.Text)
-                .FirstOrDefault();
-            if (usage != null && usage.Parent is BinaryExpressionSyntax binary && (binary.IsKind(SyntaxKind.AddExpression) || binary.IsKind(SyntaxKind.MultiplyExpression)))
-                return "accumulator";
-
             return "local";
+        }
+
+        private bool HasNameConflict(string newName, MethodDeclarationSyntax method, SemanticModel model, CancellationToken ct)
+        {
+            return method.DescendantNodes()
+                .OfType<IdentifierNameSyntax>()
+                .Any(id => id.Identifier.Text == newName && model.GetSymbolInfo(id, ct).Symbol != null);
         }
     }
 }

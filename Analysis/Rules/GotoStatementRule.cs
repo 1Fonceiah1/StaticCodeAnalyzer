@@ -9,33 +9,33 @@ namespace StaticCodeAnalyzer.Analysis
 {
     public class GotoStatementRule : IAnalyzerRule
     {
-        // Находит все операторы goto в коде
-        public async Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
+        public Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
         {
             var issues = new List<AnalysisIssue>();
-
             var gotoStatements = root.DescendantNodes().OfType<GotoStatementSyntax>();
+
             foreach (var gotoStmt in gotoStatements)
             {
                 var location = gotoStmt.GotoKeyword.GetLocation();
-                if (location == null) continue;
-
-                var lineSpan = location.GetLineSpan();
-                issues.Add(new AnalysisIssue
+                if (location != null)
                 {
-                    Severity = "Средний",
-                    FilePath = filePath,
-                    LineNumber = lineSpan.StartLinePosition.Line + 1,
-                    ColumnNumber = lineSpan.StartLinePosition.Character + 1,
-                    Type = "запах кода",
-                    Code = "GOTO001",
-                    Description = "Обнаружен оператор goto. Использование goto усложняет понимание потока выполнения и делает код менее поддерживаемым.",
-                    Suggestion = "Перепишите логику с использованием циклов, условных операторов или вызовов методов.",
-                    RuleName = "GotoStatement"
-                });
+                    var lineSpan = location.GetLineSpan();
+                    issues.Add(new AnalysisIssue
+                    {
+                        Severity = "Средний",
+                        FilePath = filePath,
+                        LineNumber = lineSpan.StartLinePosition.Line + 1,
+                        ColumnNumber = lineSpan.StartLinePosition.Character + 1,
+                        Type = "запах кода",
+                        Code = "GOTO001",
+                        Description = "Использование goto усложняет чтение и поддержку кода.",
+                        Suggestion = "Перепишите логику с использованием циклов, условий или выделите метод.",
+                        RuleName = "GotoStatement"
+                    });
+                }
             }
 
-            return issues;
+            return Task.FromResult(issues);
         }
     }
 }
