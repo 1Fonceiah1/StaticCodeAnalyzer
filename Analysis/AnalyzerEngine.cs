@@ -26,7 +26,12 @@ namespace StaticCodeAnalyzer.Analysis
                 new DisposableFieldsRule(),
                 new ThreadSafetyRule(),
                 new SecurityVulnerabilitiesRule(),
-                new CodeDuplicationRule()
+                new CodeDuplicationRule(),
+                new GotoStatementRule(),
+                new PublicFieldsRule(),
+                new PoorLocalVariableNameRule(),
+                new DuplicateMethodCallsRule(),
+                new ConsoleOutputInBusinessLogicRule()
             };
         }
 
@@ -38,8 +43,9 @@ namespace StaticCodeAnalyzer.Analysis
                 var tree = CSharpSyntaxTree.ParseText(code, path: filePath);
                 var compilation = CSharpCompilation.Create("temp")
                     .AddSyntaxTrees(tree)
-                    .AddReferences(MetadataReference.CreateFromFile(typeof(object).Assembly.Location))
-                    .AddReferences(MetadataReference.CreateFromFile(typeof(Enumerable).Assembly.Location));
+                    .AddReferences(
+                        MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
+                        MetadataReference.CreateFromFile(typeof(Enumerable).Assembly.Location));
 
                 var semanticModel = compilation.GetSemanticModel(tree);
                 var root = await tree.GetRootAsync();

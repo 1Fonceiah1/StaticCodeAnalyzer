@@ -185,40 +185,11 @@ namespace StaticCodeAnalyzer
             var inputWindow = new CodeInputWindow();
             inputWindow.Owner = this;
             inputWindow.ShowDialog();
-
             if (!inputWindow.IsAnalyze || string.IsNullOrWhiteSpace(inputWindow.EnteredCode))
                 return;
-
-            StatusText.Text = "Анализ вставленного кода...";
-            Mouse.OverrideCursor = Cursors.Wait;
-            Logger.Log("PasteCodeStart", "Начало анализа вставленного кода");
-
-            try
-            {
-                string tempFile = Path.GetTempFileName() + ".cs";
-                await File.WriteAllTextAsync(tempFile, inputWindow.EnteredCode);
-
-                var issues = await Task.Run(() => _analysisService.AnalyzeFiles(new List<string> { tempFile }));
-                _currentIssues = issues;
-
-                await SaveAnalysisResultsToDbAsync(issues, tempFile, false);
-
-                ResultsGrid.ItemsSource = _currentIssues;
-                StatusText.Text = $"Анализ завершён. Найдено {issues.Count} проблем.";
-                Logger.Log("PasteCodeEnd", $"Найдено проблем: {issues.Count}");
-
-                try { File.Delete(tempFile); } catch { }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Ошибка при анализе: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
-                StatusText.Text = "Анализ не удался.";
-                Logger.Log("PasteCodeError", ex.Message);
-            }
-            finally
-            {
-                Mouse.OverrideCursor = null;
-            }
+            var editor = new CodeEditorWindow(null, inputWindow.EnteredCode);
+            editor.Owner = this;
+            editor.ShowDialog();
         }
 
         private async Task SaveAnalysisResultsToDbAsync(List<AnalysisIssue> issues, string path, bool isFolder)
@@ -283,6 +254,18 @@ namespace StaticCodeAnalyzer
         {
             TreeColumn.Width = new GridLength(250);
             ToggleTreePanel.Content = "Скрыть дерево";
+        }
+
+        private void FilesTreeView_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            var item = FilesTreeView.SelectedItem as FileTreeNode;
+            if (item != null && !item.IsFolder && File.Exists(item.FullPath))
+            {
+                string code = File.ReadAllText(item.FullPath);
+                var editor = new CodeEditorWindow(item.FullPath, code);
+                editor.Owner = this;
+                editor.ShowDialog();
+            }
         }
 
         private void MainWindow_Closing(object sender, System.ComponentModel.CancelEventArgs e)

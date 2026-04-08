@@ -1,0 +1,100 @@
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Editing;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace StaticCodeAnalyzer.Analysis.Refactoring
+{
+    public class RefactoringRule_MagicNumbers : IRefactoringRule
+    {
+        public async Task<Document> ApplyAsync(Document document, CancellationToken cancellationToken)
+        {
+            var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
+            var semanticModel = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
+            var editor = await DocumentEditor.CreateAsync(document, cancellationToken).ConfigureAwait(false);
+
+            var numericLiterals = root.DescendantNodes()
+                .OfType<LiteralExpressionSyntax>()
+                .Where(l => l.IsKind(SyntaxKind.NumericLiteralExpression) && !IsAllowed(l) && !IsInConstContext(l, semanticModel))
+                .ToList();
+
+            if (!numericLiterals.Any()) return document;
+
+            var groups = numericLiterals.GroupBy(l => l.Token.Text);
+            var replacements = new Dictionary<LiteralExpressionSyntax, string>();
+
+            foreach (var group in groups)
+            {
+                var literalText = group.Key;
+                var constName = GenerateConstName(literalText);
+                var first = group.First();
+                var containingType = first.Ancestors().OfType<TypeDeclarationSyntax>().FirstOrDefault();
+                if (containingType == null) continue;
+
+                var typeSymbol = semanticModel.GetDeclaredSymbol(containingType, cancellationToken);
+                if (typeSymbol != null && typeSymbol.GetMembers(constName).Any())
+                    continue;
+
+                var typeName = GetNumericTypeName(first);
+                var constField = SyntaxFactory.FieldDeclaration(
+                    SyntaxFactory.VariableDeclaration(
+                        SyntaxFactory.ParseTypeName(typeName),
+                        SyntaxFactory.SingletonSeparatedList(
+                            SyntaxFactory.VariableDeclarator(constName)
+                                .WithInitializer(SyntaxFactory.EqualsValueClause(first.WithoutTrivia()))
+                        ))
+                )
+                .WithModifiers(SyntaxFactory.TokenList(SyntaxFactory.Token(SyntaxKind.PrivateKeyword), SyntaxFactory.Token(SyntaxKind.ConstKeyword)))
+                .NormalizeWhitespace();
+
+                editor.AddMember(containingType, constField);
+                foreach (var lit in group)
+                    replacements[lit] = constName;
+            }
+
+            foreach (var (literal, constName) in replacements)
+            {
+                var newIdentifier = SyntaxFactory.IdentifierName(constName).WithTriviaFrom(literal);
+                editor.ReplaceNode(literal, newIdentifier);
+            }
+
+            return editor.GetChangedDocument();
+        }
+
+        private bool IsAllowed(LiteralExpressionSyntax literal)
+        {
+            var text = literal.Token.Text;
+            return text == "0" || text == "1" || text == "-1" || text == "0.0" || text == "1.0" ||
+                   text == "0f" || text == "1f" || text == "-1f" || text == "0.0f" || text == "1.0f";
+        }
+
+        private bool IsInConstContext(LiteralExpressionSyntax literal, SemanticModel model)
+        {
+            return literal.Ancestors().Any(a => a is AttributeSyntax || a is EnumMemberDeclarationSyntax ||
+                                               (a is ParameterSyntax p && p.Default?.Value == literal) ||
+                                               (a is VariableDeclaratorSyntax v && v.Parent?.Parent is FieldDeclarationSyntax f && f.Modifiers.Any(SyntaxKind.ConstKeyword)));
+        }
+
+        private string GenerateConstName(string literalText)
+        {
+            var sanitized = literalText.Replace(".", "_").Replace("-", "minus");
+            return $"magic_{sanitized}";
+        }
+
+        private string GetNumericTypeName(LiteralExpressionSyntax literal)
+        {
+            var text = literal.Token.Text;
+            if (text.Contains("f") || text.Contains("F")) return "float";
+            if (text.Contains("d") || text.Contains("D")) return "double";
+            if (text.Contains("m") || text.Contains("M")) return "decimal";
+            if (text.Contains("l") || text.Contains("L")) return "long";
+            if (text.Contains("ul") || text.Contains("UL")) return "ulong";
+            if (text.Contains("u") || text.Contains("U")) return "uint";
+            return "int";
+        }
+    }
+}

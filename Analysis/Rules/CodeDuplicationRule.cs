@@ -13,11 +13,11 @@ namespace StaticCodeAnalyzer.Analysis
         {
             var issues = new List<AnalysisIssue>();
 
-            // Ищем все методы в файле
+            // Ищет все методы в файле
             var methods = root.DescendantNodes().OfType<MethodDeclarationSyntax>().ToList();
             if (methods.Count < 2) return issues; // не с чем сравнивать
 
-            // Сравниваем каждую пару методов на идентичность тела (без учёта отступов и имён переменных)
+            // Сравнивает каждую пару методов на идентичность тела (без учёта отступов и имён переменных)
             for (int i = 0; i < methods.Count; i++)
             {
                 for (int j = i + 1; j < methods.Count; j++)
@@ -26,7 +26,7 @@ namespace StaticCodeAnalyzer.Analysis
                     var method2 = methods[j];
                     if (AreBodiesIdentical(method1.Body, method2.Body))
                     {
-                        // Сообщаем о дублировании
+                        // Сообщает о дублировании
                         var loc1 = method1.Identifier.GetLocation();
                         var loc2 = method2.Identifier.GetLocation();
                         if (loc1 != null && loc2 != null)
@@ -58,7 +58,7 @@ namespace StaticCodeAnalyzer.Analysis
             if (body1 == null && body2 == null) return true;
             if (body1 == null || body2 == null) return false;
 
-            // Сравниваем строковые представления, игнорируя пробелы и переводы строк
+            // Сравнивает строковые представления, игнорируя пробелы и переводы строк
             string code1 = body1.NormalizeWhitespace().ToFullString();
             string code2 = body2.NormalizeWhitespace().ToFullString();
             return code1 == code2;
