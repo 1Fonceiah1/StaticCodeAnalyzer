@@ -11,6 +11,40 @@
         <SolidColorBrush x:Key="AccentColor" Color="#D32F2F"/>
         <SolidColorBrush x:Key="ButtonBgGray" Color="#555"/>
 
+        <!-- СТИЛЬ ДЛЯ КРАСНОЙ АДАПТИВНОЙ РАМКИ (как в CodeInputWindow) -->
+        <Style TargetType="TextBox">
+            <Setter Property="Background" Value="{StaticResource SecondaryBackground}"/>
+            <Setter Property="Foreground" Value="{StaticResource TextColor}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource AccentColor}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="FontFamily" Value="Consolas"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Padding" Value="3"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border x:Name="border"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="2">
+                            <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="BorderBrush" Value="#B71C1C"/>
+                            </Trigger>
+                            <Trigger Property="IsFocused" Value="True">
+                                <Setter TargetName="border" Property="BorderBrush" Value="#B71C1C"/>
+                                <Setter TargetName="border" Property="BorderThickness" Value="2"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Остальные стили кнопок (без изменений) -->
         <Style x:Key="AnalyzerButton" TargetType="Button">
             <Setter Property="Background" Value="{StaticResource AccentColor}"/>
             <Setter Property="Foreground" Value="{StaticResource TextColor}"/>
@@ -74,29 +108,39 @@
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-        <TextBlock Text="Редактирование кода" FontWeight="Bold" FontSize="14" Foreground="{StaticResource AccentColor}" Margin="0,0,0,5"/>
+
+        <TextBlock Text="Редактирование кода" FontWeight="Bold" FontSize="14" 
+                   Foreground="{StaticResource AccentColor}" Margin="0,0,0,5"/>
+
+        <!-- Основная сетка с двумя колонками -->
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="2*"/>
                 <ColumnDefinition Width="1*"/>
             </Grid.ColumnDefinitions>
-            <Border Grid.Column="0" Background="{StaticResource SecondaryBackground}" CornerRadius="5" Margin="0,0,5,0" Padding="5">
-                <TextBox x:Name="CodeEditor" AcceptsReturn="True" AcceptsTab="True" TextWrapping="NoWrap"
-                         FontFamily="Consolas" FontSize="12" Background="#1E1E1E" Foreground="{StaticResource TextColor}"
-                         BorderBrush="{StaticResource AccentColor}" BorderThickness="1"
-                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"/>
-            </Border>
-            <Border Grid.Column="1" Background="{StaticResource SecondaryBackground}" CornerRadius="5" Margin="5,0,0,0" Padding="5">
+
+            <!-- Левая колонка: редактор кода (без внешнего Border, рамка рисуется самим TextBox) -->
+            <TextBox x:Name="CodeEditor" Grid.Column="0"
+                     AcceptsReturn="True" AcceptsTab="True" TextWrapping="NoWrap"
+                     VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                     Margin="0,0,5,0" Padding="5"/>
+
+            <!-- Правая колонка: список ошибок (без изменений) -->
+            <Border Grid.Column="1" Background="{StaticResource SecondaryBackground}" 
+                    CornerRadius="5" Margin="5,0,0,0" Padding="5">
                 <DockPanel>
-                    <TextBlock DockPanel.Dock="Top" Text="Ошибки и предложения" FontWeight="Bold" Foreground="{StaticResource AccentColor}" Margin="0,0,0,5"/>
-                    <ListBox x:Name="IssuesListBox" Background="Transparent" Foreground="{StaticResource TextColor}"
-                             BorderThickness="0" Height="Auto">
+                    <TextBlock DockPanel.Dock="Top" Text="Ошибки и предложения" FontWeight="Bold" 
+                               Foreground="{StaticResource AccentColor}" Margin="0,0,0,5"/>
+                    <ListBox x:Name="IssuesListBox" Background="Transparent" 
+                             Foreground="{StaticResource TextColor}" BorderThickness="0">
                         <ListBox.ItemTemplate>
                             <DataTemplate>
                                 <StackPanel Margin="0,5">
-                                    <TextBlock Text="{Binding Severity}" FontWeight="Bold" Foreground="{StaticResource AccentColor}"/>
+                                    <TextBlock Text="{Binding Severity}" FontWeight="Bold" 
+                                               Foreground="{StaticResource AccentColor}"/>
                                     <TextBlock Text="{Binding Description}" TextWrapping="Wrap" Margin="5,0,0,0"/>
-                                    <TextBlock Text="{Binding Suggestion}" Foreground="#AAAAAA" FontStyle="Italic" Margin="5,2,0,0"/>
+                                    <TextBlock Text="{Binding Suggestion}" Foreground="#AAAAAA" 
+                                               FontStyle="Italic" Margin="5,2,0,0"/>
                                 </StackPanel>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
@@ -104,6 +148,8 @@
                 </DockPanel>
             </Border>
         </Grid>
+
+        <!-- Кнопки внизу (без изменений) -->
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
             <Button x:Name="AnalyzeButton" Content="Анализ" Width="80" Height="30" Margin="0,0,10,0"
                     Click="AnalyzeButton_Click" Style="{StaticResource AnalyzerButton}"/>
