@@ -2,9 +2,6 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Editing;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace StaticCodeAnalyzer.Analysis.Refactoring
 {
@@ -16,85 +13,84 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             var semanticModel = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
             var editor = await DocumentEditor.CreateAsync(document, cancellationToken).ConfigureAwait(false);
             bool changed = false;
+            bool needsTaskUsing = false;
 
+            // Снимок методов из исходного дерева
             var methods = root.DescendantNodes().OfType<MethodDeclarationSyntax>().ToList();
+
             foreach (var method in methods)
             {
                 var threadSleeps = method.DescendantNodes()
                     .OfType<InvocationExpressionSyntax>()
                     .Where(inv => inv.Expression is MemberAccessExpressionSyntax ma &&
-                                  ma.Expression is IdentifierNameSyntax { Identifier.Text: "Thread" } &&
+                                  ma.Expression.ToString() == "Thread" &&
                                   ma.Name.Identifier.Text == "Sleep")
                     .ToList();
 
                 if (threadSleeps.Any())
                 {
-                    // Добавляем using System.Threading.Tasks
-                    var compUnit = root as CompilationUnitSyntax ?? method.FirstAncestorOrSelf<CompilationUnitSyntax>();
-                    if (compUnit != null && !compUnit.Usings.Any(u => u.Name?.ToString() == "System.Threading.Tasks"))
-                    {
-                        var usingTask = SyntaxFactory.UsingDirective(SyntaxFactory.ParseName("System.Threading.Tasks"));
-                        var newCompUnit = compUnit.AddUsings(usingTask).NormalizeWhitespace();
-                        editor.ReplaceNode(compUnit, newCompUnit);
-                        root = newCompUnit;
-                    }
+                    needsTaskUsing = true;
 
-                    var newMethod = method;
-                    foreach (var sleep in threadSleeps)
+                    // Пакетная замена всех Thread.Sleep → await Task.Delay за один проход
+                    var newMethod = method.ReplaceNodes(threadSleeps, (original, _) =>
                     {
-                        var arg = sleep.ArgumentList.Arguments.FirstOrDefault();
-                        if (arg == null) continue;
+                        var arg = original.ArgumentList.Arguments.FirstOrDefault();
+                        if (arg == null) return original;
 
-                        var delayCall = SyntaxFactory.InvocationExpression(
+                        var delay = SyntaxFactory.InvocationExpression(
                                 SyntaxFactory.MemberAccessExpression(
                                     SyntaxKind.SimpleMemberAccessExpression,
                                     SyntaxFactory.IdentifierName("Task"),
                                     SyntaxFactory.IdentifierName("Delay")))
                             .WithArgumentList(SyntaxFactory.ArgumentList(SyntaxFactory.SingletonSeparatedList(arg)));
 
-                        // Ключевой фикс: AwaitExpression автоматически добавляет пробел после await
-                        var awaitDelay = SyntaxFactory.AwaitExpression(delayCall);
-                        newMethod = newMethod.ReplaceNode(sleep, awaitDelay);
-                    }
+                        return SyntaxFactory.AwaitExpression(delay).WithTriviaFrom(original);
+                    });
 
-                    // Добавляем async с правильным пробелом
-                    if (!newMethod.Modifiers.Any(m => m.IsKind(SyntaxKind.AsyncKeyword)))
-                    {
-                        // Вставляем async ПЕРЕД первым модификатором или перед типом возврата
-                        var newModifiers = newMethod.Modifiers.Add(SyntaxFactory.Token(SyntaxKind.AsyncKeyword).WithTrailingTrivia(SyntaxFactory.Space));
-                        newMethod = newMethod.WithModifiers(newModifiers);
-                    }
+                    // Добавляем async, если отсутствует
+                    if (!newMethod.Modifiers.Any(SyntaxKind.AsyncKeyword))
+                        newMethod = newMethod.AddModifiers(SyntaxFactory.Token(SyntaxKind.AsyncKeyword));
 
                     // Корректируем возвращаемый тип
-                    var returnTypeSymbol = semanticModel.GetTypeInfo(method.ReturnType, cancellationToken).Type;
-                    if (returnTypeSymbol != null)
-                    {
-                        if (returnTypeSymbol.SpecialType == SpecialType.System_Void)
-                            newMethod = newMethod.WithReturnType(SyntaxFactory.ParseTypeName("Task").WithTrailingTrivia(SyntaxFactory.Space));
-                        else if (returnTypeSymbol.Name != "Task" && (returnTypeSymbol.OriginalDefinition?.Name ?? "") != "Task`1")
-                        {
-                            var genericTask = SyntaxFactory.GenericName("Task")
-                                .WithTypeArgumentList(SyntaxFactory.TypeArgumentList(
-                                    SyntaxFactory.SingletonSeparatedList(method.ReturnType)));
-                            newMethod = newMethod.WithReturnType(genericTask.WithTrailingTrivia(SyntaxFactory.Space));
-                        }
-                    }
+                    var returnType = semanticModel.GetTypeInfo(method.ReturnType, cancellationToken).Type;
+                    if (returnType?.SpecialType == SpecialType.System_Void)
+                        newMethod = newMethod.WithReturnType(SyntaxFactory.ParseTypeName("Task"));
+                    else if (returnType != null && returnType.Name != "Task" && !returnType.Name.StartsWith("Task`"))
+                        newMethod = newMethod.WithReturnType(
+                            SyntaxFactory.GenericName(
+                                SyntaxFactory.Identifier("Task"),
+                                SyntaxFactory.TypeArgumentList(SyntaxFactory.SingletonSeparatedList(method.ReturnType))));
 
+                    // Безопасная замена через редактор (используем ОРИГИНАЛЬНЫЙ узел method)
                     editor.ReplaceNode(method, newMethod.NormalizeWhitespace());
                     changed = true;
                 }
                 // Удаляем бесполезный async
-                else if (method.Modifiers.Any(m => m.IsKind(SyntaxKind.AsyncKeyword)) && 
+                else if (method.Modifiers.Any(SyntaxKind.AsyncKeyword) &&
                          !method.DescendantNodes().OfType<AwaitExpressionSyntax>().Any())
                 {
                     var newModifiers = method.Modifiers.Where(m => !m.IsKind(SyntaxKind.AsyncKeyword));
                     var newMethod = method.WithModifiers(SyntaxFactory.TokenList(newModifiers));
-                    editor.ReplaceNode(method, newMethod);
+                    editor.ReplaceNode(method, newMethod.NormalizeWhitespace());
                     changed = true;
                 }
             }
 
-            return changed ? editor.GetChangedDocument().WithSyntaxRoot(await editor.GetChangedDocument().GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false)) : document;
+            var resultDoc = changed ? editor.GetChangedDocument() : document;
+
+            // Добавляем using System.Threading.Tasks только если он не был добавлен ранее
+            if (needsTaskUsing)
+            {
+                var finalRoot = await resultDoc.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false) as CompilationUnitSyntax;
+                if (finalRoot != null && !finalRoot.Usings.Any(u => u.Name?.ToString() == "System.Threading.Tasks"))
+                {
+                    var usingTask = SyntaxFactory.UsingDirective(SyntaxFactory.ParseName("System.Threading.Tasks"));
+                    var newRoot = finalRoot.AddUsings(usingTask).NormalizeWhitespace();
+                    resultDoc = resultDoc.WithSyntaxRoot(newRoot);
+                }
+            }
+
+            return resultDoc;
         }
     }
 }
