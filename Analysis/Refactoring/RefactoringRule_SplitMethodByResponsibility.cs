@@ -46,7 +46,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                     var classDecl = method.FirstAncestorOrSelf<ClassDeclarationSyntax>();
                     if (classDecl == null) continue;
 
-                    // Создаём ComputeValues только если есть вычисления
+                    // Создаёт ComputeValues только если есть вычисления
                     if (computation.Any())
                     {
                         var computeMethod = SyntaxFactory.MethodDeclaration(
@@ -58,7 +58,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                         editor.AddMember(classDecl, computeMethod);
                     }
 
-                    // Создаём DisplayOutputs только если есть вывод
+                    // Создаёт DisplayOutputs только если есть вывод
                     if (output.Any())
                     {
                         var displayMethod = SyntaxFactory.MethodDeclaration(
@@ -70,7 +70,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                         editor.AddMember(classDecl, displayMethod);
                     }
 
-                    // Формируем новое тело: вызовы новых методов + остальные операторы
+                    // Формирует новое тело: вызовы новых методов + остальные операторы
                     var newBodyStatements = new List<StatementSyntax>();
                     if (computation.Any())
                         newBodyStatements.Add(CreateInvocation("ComputeValues"));

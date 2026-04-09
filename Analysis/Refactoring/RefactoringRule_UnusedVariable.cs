@@ -30,13 +30,13 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                 var symbol = semanticModel.GetDeclaredSymbol(variable, cancellationToken);
                 if (symbol == null) continue;
 
-                // Ищем ссылки через SymbolFinder с передачей Solution
+                // Ищет ссылки через SymbolFinder с передачей Solution
                 var references = await SymbolFinder.FindReferencesAsync(
                     symbol, 
                     document.Project.Solution, 
                     cancellationToken).ConfigureAwait(false);
 
-                // Считаем только явные использования (не объявление)
+                // Считает только явные использования (не объявление)
                 int usageCount = references
                     .SelectMany(r => r.Locations)
                     .Count(loc => !loc.IsImplicit);
@@ -49,13 +49,13 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 
                     if (declaration.Variables.Count == 1)
                     {
-                        // Удаляем всё объявление
+                        // Удаляет всё объявление
                         editor.RemoveNode(statement);
                         changed = true;
                     }
                     else
                     {
-                        // Удаляем только эту переменную из списка
+                        // Удаляет только эту переменную из списка
                         var newDecl = declaration.RemoveNode(variable, SyntaxRemoveOptions.KeepNoTrivia);
                         if (newDecl is VariableDeclarationSyntax newVarDecl && newVarDecl.Variables.Count == 0)
                         {

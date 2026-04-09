@@ -13,9 +13,7 @@ namespace StaticCodeAnalyzer.Tests
 {
     public static class TestHelpers
     {
-        /// <summary>
-        /// Анализирует код с помощью указанного правила и возвращает найденные проблемы
-        /// </summary>
+        // Анализирует код с помощью указанного правила и возвращает найденные проблемы
         public static async Task<List<AnalysisIssue>> AnalyzeCodeAsync<T>(string code, string filePath = "Test.cs") 
             where T : IAnalyzerRule, new()
         {
@@ -35,9 +33,7 @@ namespace StaticCodeAnalyzer.Tests
             return await rule.AnalyzeAsync(root, semanticModel, filePath);
         }
 
-        /// <summary>
-        /// Применяет правило рефакторинга к коду и возвращает результат
-        /// </summary>
+        // Применяет правило рефакторинга к коду и возвращает результат
         public static async Task<string> ApplyRefactoringAsync<T>(string code) 
             where T : IRefactoringRule, new() // ← Исправлено ограничение
         {
@@ -53,7 +49,7 @@ namespace StaticCodeAnalyzer.Tests
             var document = workspace.AddDocument(project.Id, "Test.cs", SourceText.From(code));
             var rule = new T();
             
-            // ← Явно передаём токен отмены (интерфейс поддерживает default, но в тестах лучше указывать явно)
+            // Передаёт токен отмены
             var resultDoc = await rule.ApplyAsync(document, CancellationToken.None);
             var root = await resultDoc.GetSyntaxRootAsync();
             return root?.NormalizeWhitespace().ToFullString() ?? code;

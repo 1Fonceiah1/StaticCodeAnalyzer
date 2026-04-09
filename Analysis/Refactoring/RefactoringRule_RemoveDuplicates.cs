@@ -34,7 +34,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                         var targetMethod = methods[j];
                         var sourceMethod = methods[i];
                         
-                        // Проверяем, не является ли метод уже заменённым
+                        // Проверяет, не является ли метод уже заменённым
                         if (targetMethod.Body.Statements.Count == 1 && 
                             targetMethod.Body.Statements.First() is ExpressionStatementSyntax exprStmt &&
                             exprStmt.Expression is InvocationExpressionSyntax inv &&
@@ -42,11 +42,11 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                             invId.Identifier.Text == sourceMethod.Identifier.Text)
                             continue;
 
-                        // Получаем символ метода для корректной генерации вызова
+                        // Получает символ метода для корректной генерации вызова
                         var methodSymbol = semanticModel.GetDeclaredSymbol(targetMethod, cancellationToken) as IMethodSymbol;
                         if (methodSymbol == null) continue;
 
-                        // Формируем список аргументов из параметров целевого метода
+                        // Формирует список аргументов из параметров целевого метода
                         var arguments = SyntaxFactory.ArgumentList(
                             SyntaxFactory.SeparatedList(
                                 targetMethod.ParameterList.Parameters.Select(p => 

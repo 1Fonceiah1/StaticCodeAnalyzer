@@ -27,10 +27,10 @@ namespace StaticCodeAnalyzer.Tests.Refactoring
             // Assert
             result.Should().Contain("private const int");
             result.Should().Contain("Const_42");
-            // Проверяем, что использования заменены на имя константы
+            // Проверяет, что использования заменены на имя константы
             result.Should().Contain("int x = Const_42;");
             result.Should().Contain("int y = Const_42;");
-            // Проверяем, что константа инициализируется исходным значением
+            // Проверяет, что константа инициализируется исходным значением
             result.Should().Contain("Const_42 = 42;");
         }
 

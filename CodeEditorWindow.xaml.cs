@@ -42,7 +42,7 @@ namespace StaticCodeAnalyzer
                 await File.WriteAllTextAsync(tempFile, currentCode);
                 var issues = await _analysisService.AnalyzeFiles(new List<string> { tempFile });
                 IssuesListBox.ItemsSource = issues;
-                // Определяем, есть ли исправимые ошибки
+                // Определяет, есть ли исправимые ошибки
                 var fixableCodes = _refactoringEngine.GetFixableIssueCodes();
                 bool hasFixable = issues.Any(i => fixableCodes.Contains(i.Code));
                 RefactorButton.IsEnabled = hasFixable;

@@ -36,7 +36,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                 var parentBlock = label.Parent as BlockSyntax;
                 if (parentBlock == null) continue;
 
-                // Простая и надёжная логика: удаляем goto и метку, код между ними остаётся
+                // Удаляет goto и метку, код между ними остаётся
                 var statements = parentBlock.Statements.ToList();
                 var gotoIndex = statements.IndexOf(gotoStmt);
                 var labelIndex = statements.IndexOf(label);

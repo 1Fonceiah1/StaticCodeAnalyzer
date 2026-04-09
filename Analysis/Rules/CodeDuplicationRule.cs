@@ -52,7 +52,7 @@ namespace StaticCodeAnalyzer.Analysis
             if (body1 == null && body2 == null) return true;
             if (body1 == null || body2 == null) return false;
             
-            // Надёжное сравнение без SyntaxFactory: убираем пробелы/переносы и сравниваем текст
+            // Надёжное сравнение без SyntaxFactory: убирает пробелы/переносы и сравниваем текст
             return body1.NormalizeWhitespace().ToFullString() == body2.NormalizeWhitespace().ToFullString();
         }
     }

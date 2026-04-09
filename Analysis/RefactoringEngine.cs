@@ -83,7 +83,7 @@ namespace StaticCodeAnalyzer.Analysis
                 var project = workspace.AddProject(projectInfo);
                 var document = workspace.AddDocument(project.Id, "TempDocument.cs", SourceText.From(code));
 
-                // Применяем правила по порядку
+                // Применяет правила по порядку
                 foreach (var rule in _rules)
                 {
                     try
@@ -97,7 +97,7 @@ namespace StaticCodeAnalyzer.Analysis
                     catch (Exception ex)
                     {
                         System.Diagnostics.Debug.WriteLine($"Error in {rule.GetType().Name}: {ex.Message}");
-                        // Продолжаем выполнение, не прерываем весь процесс
+                        // Продолжает выполнение, не прерывает весь процесс
                     }
                 }
 
@@ -117,7 +117,7 @@ namespace StaticCodeAnalyzer.Analysis
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"RefactoringEngine error: {ex.Message}");
-                return code; // Возвращаем исходный код при ошибке
+                return code; // Возвращает исходный код при ошибке
             }
         }
 

@@ -42,13 +42,13 @@ namespace StaticCodeAnalyzer.Tests.Integration
             var engine = new AnalyzerEngine();
             var issues = await engine.AnalyzeFileAsync(tempFile);
 
-            // Assert — проверяем наличие ключевых проблем, а не точное количество
+            // Assert - проверяет наличие ключевых проблем, а не точное количество
             issues.Should().Contain(i => i.Code == "ENC001");  // PublicField
             issues.Should().Contain(i => i.Code == "ASY001");  // UselessAsync без await
             issues.Should().Contain(i => i.Code == "MAG001");  // magic = 100
             issues.Should().Contain(i => i.Code == "ERR001");  // пустой catch
             
-            // Дополнительно: проверяем, что анализ вообще что-то нашёл
+            // Дополнительно: проверяет, что анализ вообще что-то нашёл
             issues.Should().NotBeEmpty();
 
             File.Delete(tempFile);

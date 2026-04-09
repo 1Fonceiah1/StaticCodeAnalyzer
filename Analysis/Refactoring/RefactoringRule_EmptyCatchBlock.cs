@@ -28,11 +28,11 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             {
                 var exceptionVar = catchClause.Declaration?.Identifier.Text ?? "ex";
                 
-                // Создаём комментарий безопасным способом
+                // Создаёт комментарий безопасным способом
                 var comment = SyntaxFactory.Comment($"// TODO: Обработайте исключение или запишите в лог. Переменная: {exceptionVar}");
                 var trivia = SyntaxFactory.TriviaList(comment, SyntaxFactory.CarriageReturnLineFeed);
                 
-                // Создаём оператор throw с комментарием
+                // Создаёт оператор throw с комментарием
                 var throwStmt = SyntaxFactory.ThrowStatement().WithLeadingTrivia(trivia);
                 var newBlock = SyntaxFactory.Block(throwStmt);
                 

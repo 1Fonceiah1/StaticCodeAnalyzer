@@ -76,7 +76,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                 (a is VariableDeclaratorSyntax v && v.Parent?.Parent is FieldDeclarationSyntax f && 
                  f.Modifiers.Any(m => m.IsKind(SyntaxKind.ConstKeyword))));
 
-        // ← ИСПРАВЛЕНО: корректное определение типа по суффиксу и наличию точки
+        // Корректное определение типа по суффиксу и наличию точки
         private string GetNumericTypeName(string text)
         {
             if (text.Contains("f") || text.Contains("F")) return "float";
@@ -84,7 +84,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             if (text.Contains("d") || text.Contains("D")) return "double";
             if (text.Contains("L") || text.Contains("l")) return "long";
             if (text.Contains("U") || text.Contains("u")) return text.Contains("L") ? "ulong" : "uint";
-            // Если есть точка и нет суффикса — это double по умолчанию в C#
+            // Если есть точка и нет суффикса - это double по умолчанию в C#
             if (text.Contains(".")) return "double";
             return "int";
         }

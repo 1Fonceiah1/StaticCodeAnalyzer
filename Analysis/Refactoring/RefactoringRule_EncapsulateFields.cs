@@ -49,7 +49,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                         .Any(v => v.Identifier.Text.Equals(fieldName, System.StringComparison.OrdinalIgnoreCase));
                     if (fieldExists) continue;
 
-                    // Меняем поле на private с новым именем
+                    // Меняет поле на private с новым именем
                     var newModifiers = fieldDecl.Modifiers
                         .Where(m => !m.IsKind(SyntaxKind.PublicKeyword))
                         .Append(SyntaxFactory.Token(SyntaxKind.PrivateKeyword));
@@ -60,7 +60,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                             variable.WithIdentifier(SyntaxFactory.Identifier(fieldName)))))
                         .NormalizeWhitespace();
 
-                    // Создаём публичное автоматическое свойство
+                    // Создаёт публичное автоматическое свойство
                     var property = SyntaxFactory.PropertyDeclaration(
                             fieldDecl.Declaration.Type.WithTrailingTrivia(SyntaxFactory.Space),
                             SyntaxFactory.Identifier(propertyName))

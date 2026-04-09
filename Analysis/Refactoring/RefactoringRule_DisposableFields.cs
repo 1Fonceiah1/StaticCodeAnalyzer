@@ -39,7 +39,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 
                 if (!disposableFields.Any()) continue;
 
-                // Добавляем IDisposable в базовые типы
+                // Добавляет IDisposable в базовые типы
                 if (classDecl.BaseList == null || !classDecl.BaseList.Types.Any(t => t.Type.ToString().Contains("IDisposable")))
                 {
                     var baseList = classDecl.BaseList ?? SyntaxFactory.BaseList();
@@ -48,7 +48,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                     changed = true;
                 }
 
-                // Генерируем Dispose, если его нет
+                // Генерирует Dispose, если его нет
                 if (classSymbol.GetMembers("Dispose").OfType<IMethodSymbol>().Any(m => m.Parameters.Length == 0))
                     continue;
 

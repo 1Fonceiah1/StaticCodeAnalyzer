@@ -47,11 +47,11 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                 var name = group.Key;
                 var firstOccurrence = group.First();
                 
-                // Ищем содержащий класс
+                // Ищет содержащий класс
                 var classDecl = firstOccurrence.FirstAncestorOrSelf<ClassDeclarationSyntax>();
                 if (classDecl == null) continue;
 
-                // Проверяем, не объявлена ли уже константа с таким именем в этом классе
+                // Проверяет, не объявлена ли уже константа с таким именем в этом классе
                 var existingMembers = classDecl.Members
                     .OfType<FieldDeclarationSyntax>()
                     .SelectMany(f => f.Declaration.Variables)
@@ -59,12 +59,12 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                 
                 if (existingMembers.Contains(name)) continue;
 
-                // Проверяем, есть ли предопределённое значение для этого имени
+                // Проверяет, есть ли предопределённое значение для этого имени
                 if (!CommonConstants.TryGetValue(name.ToLowerInvariant(), out var constantInfo)) continue;
 
                 var (value, typeName) = constantInfo;
 
-                // Генерируем литерал правильного типа
+                // Генерирует литерал правильного типа
                 ExpressionSyntax literalValue = typeName switch
                 {
                     "int" => SyntaxFactory.LiteralExpression(SyntaxKind.NumericLiteralExpression, SyntaxFactory.Literal(int.Parse(value))),
@@ -75,7 +75,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                     _ => SyntaxFactory.LiteralExpression(SyntaxKind.NumericLiteralExpression, SyntaxFactory.Literal(int.Parse(value)))
                 };
 
-                // Создаём приватную константу
+                // Создаёт приватную константу
                 var constField = SyntaxFactory.FieldDeclaration(
                         SyntaxFactory.VariableDeclaration(
                             SyntaxFactory.ParseTypeName(typeName),
@@ -87,7 +87,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                         SyntaxFactory.Token(SyntaxKind.ConstKeyword)))
                     .NormalizeWhitespace();
 
-                // Добавляем константу в класс
+                // Добавляет константу в класс
                 editor.AddMember(classDecl, constField);
                 changed = true;
             }

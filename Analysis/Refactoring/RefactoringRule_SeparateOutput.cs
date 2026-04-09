@@ -31,12 +31,12 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             var classDecl = consoleWrites.First().FirstAncestorOrSelf<ClassDeclarationSyntax>();
             if (classDecl == null) return document;
 
-            // Проверяем, есть ли уже метод с таким именем
+            // Проверяет, есть ли уже метод с таким именем
             var existingMethods = classDecl.Members.OfType<MethodDeclarationSyntax>();
             if (existingMethods.Any(m => m.Identifier.Text == "DisplayOutput"))
                 return document;
 
-            // Создаём метод DisplayOutput
+            // Создаёт метод DisplayOutput
             var outputMethod = SyntaxFactory.MethodDeclaration(
                     SyntaxFactory.PredefinedType(SyntaxFactory.Token(SyntaxKind.VoidKeyword)),
                     "DisplayOutput")
@@ -60,7 +60,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             editor.AddMember(classDecl, outputMethod);
             changed = true;
 
-            // Заменяем вызовы Console.WriteLine на DisplayOutput
+            // Заменяет вызовы Console.WriteLine на DisplayOutput
             foreach (var write in consoleWrites)
             {
                 var arg = write.ArgumentList.Arguments.FirstOrDefault();

@@ -47,11 +47,11 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                         return SyntaxFactory.AwaitExpression(delay).WithTriviaFrom(original);
                     });
 
-                    // Добавляем async, если отсутствует
+                    // Добавляет async, если отсутствует
                     if (!newMethod.Modifiers.Any(SyntaxKind.AsyncKeyword))
                         newMethod = newMethod.AddModifiers(SyntaxFactory.Token(SyntaxKind.AsyncKeyword));
 
-                    // Корректируем возвращаемый тип
+                    // Корректирует возвращаемый тип
                     var returnType = semanticModel.GetTypeInfo(method.ReturnType, cancellationToken).Type;
                     if (returnType?.SpecialType == SpecialType.System_Void)
                         newMethod = newMethod.WithReturnType(SyntaxFactory.ParseTypeName("Task"));
@@ -61,11 +61,11 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                                 SyntaxFactory.Identifier("Task"),
                                 SyntaxFactory.TypeArgumentList(SyntaxFactory.SingletonSeparatedList(method.ReturnType))));
 
-                    // Безопасная замена через редактор (используем ОРИГИНАЛЬНЫЙ узел method)
+                    // Безопасная замена через редактор (использует узел method)
                     editor.ReplaceNode(method, newMethod.NormalizeWhitespace());
                     changed = true;
                 }
-                // Удаляем бесполезный async
+                // Удаляет бесполезный async
                 else if (method.Modifiers.Any(SyntaxKind.AsyncKeyword) &&
                          !method.DescendantNodes().OfType<AwaitExpressionSyntax>().Any())
                 {
@@ -78,7 +78,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 
             var resultDoc = changed ? editor.GetChangedDocument() : document;
 
-            // Добавляем using System.Threading.Tasks только если он не был добавлен ранее
+            // Добавляет using System.Threading.Tasks только если он не был добавлен ранее
             if (needsTaskUsing)
             {
                 var finalRoot = await resultDoc.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false) as CompilationUnitSyntax;

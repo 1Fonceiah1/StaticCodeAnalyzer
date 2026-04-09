@@ -11,7 +11,7 @@
         <SolidColorBrush x:Key="AccentColor" Color="#D32F2F"/>
         <SolidColorBrush x:Key="ButtonBgGray" Color="#555"/>
 
-        <!-- СТИЛЬ ДЛЯ КРАСНОЙ АДАПТИВНОЙ РАМКИ (как в CodeInputWindow) -->
+        <!-- Стиль для красной адаптивной рамки (как в CodeInputWindow) -->
         <Style TargetType="TextBox">
             <Setter Property="Background" Value="{StaticResource SecondaryBackground}"/>
             <Setter Property="Foreground" Value="{StaticResource TextColor}"/>

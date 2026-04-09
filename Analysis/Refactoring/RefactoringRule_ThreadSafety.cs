@@ -22,7 +22,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             var classes = root.DescendantNodes().OfType<ClassDeclarationSyntax>().ToList();
             foreach (var classDecl in classes)
             {
-                // Находим изменяемые поля
+                // Находит изменяемые поля
                 var mutableFields = classDecl.Members
                     .OfType<FieldDeclarationSyntax>()
                     .Where(f => !f.Modifiers.Any(SyntaxKind.ReadOnlyKeyword) && !f.Modifiers.Any(SyntaxKind.ConstKeyword))
@@ -31,7 +31,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 
                 if (!mutableFields.Any()) continue;
 
-                // Проверяем наличие поля _lock
+                // Проверяет наличие поля _lock
                 bool hasLock = classDecl.Members
                     .OfType<FieldDeclarationSyntax>()
                     .SelectMany(f => f.Declaration.Variables)
@@ -56,7 +56,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                     changed = true;
                 }
 
-                // Находим публичные не-async методы, использующие изменяемые поля
+                // Находит публичные не-async методы, использующие изменяемые поля
                 var methods = classDecl.Members
                     .OfType<MethodDeclarationSyntax>()
                     .Where(m => m.Modifiers.Any(SyntaxKind.PublicKeyword) && 

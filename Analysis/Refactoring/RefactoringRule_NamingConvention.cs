@@ -25,14 +25,14 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                 var symbol = semanticModel.GetDeclaredSymbol(method, cancellationToken);
                 if (symbol == null) continue;
                 
-                // Пропускаем переопределённые методы и явные реализации интерфейсов
+                // Пропускает переопределённые методы и явные реализации интерфейсов
                 if (symbol.IsOverride || symbol.ExplicitInterfaceImplementations.Any()) continue;
                 
                 string current = symbol.Name;
                 if (!IsPascalCase(current))
                 {
                     string target = ToPascalCase(current);
-                    // Проверяем, нет ли конфликта имён
+                    // Проверяет, нет ли конфликта имён
                     var containingType = method.FirstAncestorOrSelf<TypeDeclarationSyntax>();
                     if (containingType != null && HasNameConflict(target, containingType, semanticModel, cancellationToken))
                         continue;
