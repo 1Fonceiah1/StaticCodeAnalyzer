@@ -13,6 +13,7 @@ namespace StaticCodeAnalyzer
             IsAnalyze = false;
         }
 
+        // Обработчик кнопки "Анализировать" – сохраняет введённый код и устанавливает флаг
         private void Analyze_Click(object sender, RoutedEventArgs e)
         {
             EnteredCode = CodeTextBox.Text;
@@ -20,6 +21,7 @@ namespace StaticCodeAnalyzer
             Close();
         }
 
+        // Обработчик кнопки "Отмена" – закрывает окно без анализа
         private void Cancel_Click(object sender, RoutedEventArgs e)
         {
             IsAnalyze = false;

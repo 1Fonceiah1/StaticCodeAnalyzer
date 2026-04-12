@@ -7,9 +7,11 @@ using StaticCodeAnalyzer.Models;
 
 namespace StaticCodeAnalyzer.Analysis
 {
+    // Выявляет локальные переменные с неинформативными именами (a, b, temp, data и т.п.)
     public class PoorLocalVariableNameRule : IAnalyzerRule
     {
-        private static readonly HashSet<string> PoorNames = new()
+        // Список неинформативных имён
+        private static readonly HashSet<string> PoorNames = new HashSet<string>()
         {
             "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m",
             "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z",
@@ -19,25 +21,25 @@ namespace StaticCodeAnalyzer.Analysis
 
         public Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
         {
-            var issues = new List<AnalysisIssue>();
-            var localVars = root.DescendantNodes()
+            List<AnalysisIssue> issues = new List<AnalysisIssue>();
+            IEnumerable<VariableDeclaratorSyntax> localVars = root.DescendantNodes()
                 .OfType<VariableDeclaratorSyntax>()
-                .Where(v => IsLocalVariable(v));
+                .Where(IsLocalVariable);
 
-            foreach (var variable in localVars)
+            foreach (VariableDeclaratorSyntax variable in localVars)
             {
-                var name = variable.Identifier.Text;
+                string name = variable.Identifier.Text;
                 if (!PoorNames.Contains(name)) continue;
 
                 if (IsAcceptableInContext(variable, name))
                     continue;
 
-                var location = variable.Identifier.GetLocation();
+                Microsoft.CodeAnalysis.Location? location = variable.Identifier.GetLocation();
                 if (location != null)
                 {
-                    var lineSpan = location.GetLineSpan();
-                    var containingMethod = variable.FirstAncestorOrSelf<MethodDeclarationSyntax>();
-                    var containingClass = variable.FirstAncestorOrSelf<ClassDeclarationSyntax>();
+                    FileLinePositionSpan lineSpan = location.GetLineSpan();
+                    MethodDeclarationSyntax? containingMethod = variable.FirstAncestorOrSelf<MethodDeclarationSyntax>();
+                    ClassDeclarationSyntax? containingClass = variable.FirstAncestorOrSelf<ClassDeclarationSyntax>();
                     issues.Add(new AnalysisIssue
                     {
                         Severity = "Низкий",
@@ -58,12 +60,14 @@ namespace StaticCodeAnalyzer.Analysis
             return Task.FromResult(issues);
         }
 
+        // Определяет, является ли узел локальной переменной
         private bool IsLocalVariable(VariableDeclaratorSyntax variable)
         {
             return variable.Parent is VariableDeclarationSyntax decl &&
                    decl.Parent is LocalDeclarationStatementSyntax;
         }
 
+        // Разрешает некоторые короткие имена в специальных контекстах (счётчики циклов, лямбды)
         private bool IsAcceptableInContext(VariableDeclaratorSyntax variable, string name)
         {
             if (variable.Parent is VariableDeclarationSyntax decl && decl.Parent is ForStatementSyntax)
@@ -80,7 +84,7 @@ namespace StaticCodeAnalyzer.Analysis
 
             if (variable.Parent is VariableDeclarationSyntax lambdaDecl)
             {
-                var parent = lambdaDecl.Parent;
+                SyntaxNode? parent = lambdaDecl.Parent;
                 if (parent is SimpleLambdaExpressionSyntax || parent is ParenthesizedLambdaExpressionSyntax)
                 {
                     if (name.Length == 1)

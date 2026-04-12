@@ -15,30 +15,30 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 
         public async Task<Document> ApplyAsync(Document document, CancellationToken cancellationToken)
         {
-            var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
-            var editor = await DocumentEditor.CreateAsync(document, cancellationToken).ConfigureAwait(false);
+            SyntaxNode root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
+            DocumentEditor editor = await DocumentEditor.CreateAsync(document, cancellationToken).ConfigureAwait(false);
             bool changed = false;
 
-            var emptyCatches = root.DescendantNodes()
+            List<CatchClauseSyntax> emptyCatches = root.DescendantNodes()
                 .OfType<CatchClauseSyntax>()
                 .Where(c => c.Block == null || c.Block.Statements.Count == 0)
                 .ToList();
 
-            foreach (var catchClause in emptyCatches)
+            foreach (CatchClauseSyntax catchClause in emptyCatches)
             {
-                var exceptionVar = catchClause.Declaration?.Identifier.Text ?? "ex";
+                string exceptionVar = catchClause.Declaration?.Identifier.Text ?? "ex";
                 
-                // Создаёт комментарий безопасным способом
-                var comment = SyntaxFactory.Comment($"// TODO: Обработайте исключение или запишите в лог. Переменная: {exceptionVar}");
-                var trivia = SyntaxFactory.TriviaList(comment, SyntaxFactory.CarriageReturnLineFeed);
+                // Добавляет комментарий с пояснением
+                SyntaxTrivia comment = SyntaxFactory.Comment($"// TODO: Обработайте исключение или запишите в лог. Переменная: {exceptionVar}");
+                SyntaxTriviaList trivia = SyntaxFactory.TriviaList(comment, SyntaxFactory.CarriageReturnLineFeed);
                 
-                // Создаёт оператор throw с комментарием
-                var throwStmt = SyntaxFactory.ThrowStatement().WithLeadingTrivia(trivia);
-                var newBlock = SyntaxFactory.Block(throwStmt);
+                // Создаёт оператор throw
+                ThrowStatementSyntax throwStmt = SyntaxFactory.ThrowStatement().WithLeadingTrivia(trivia);
+                BlockSyntax newBlock = SyntaxFactory.Block(throwStmt);
                 
-                var newCatch = catchClause.WithBlock(newBlock);
+                CatchClauseSyntax newCatch = catchClause.WithBlock(newBlock);
                 
-                // Безопасная замена узла
+                // Выполняет безопасную замену узла
                 if (catchClause.SyntaxTree == root.SyntaxTree)
                 {
                     editor.ReplaceNode(catchClause, newCatch);

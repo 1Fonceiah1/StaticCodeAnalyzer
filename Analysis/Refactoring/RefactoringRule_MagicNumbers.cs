@@ -16,12 +16,13 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 
         public async Task<Document> ApplyAsync(Document document, CancellationToken cancellationToken)
         {
-            var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
-            var semanticModel = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
-            var editor = await DocumentEditor.CreateAsync(document, cancellationToken).ConfigureAwait(false);
+            SyntaxNode root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
+            SemanticModel semanticModel = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
+            DocumentEditor editor = await DocumentEditor.CreateAsync(document, cancellationToken).ConfigureAwait(false);
             bool changed = false;
 
-            var magicLiterals = root.DescendantNodes()
+            // Находит все числовые литералы, не являющиеся разрешёнными или находящиеся в особых контекстах
+            List<LiteralExpressionSyntax> magicLiterals = root.DescendantNodes()
                 .OfType<LiteralExpressionSyntax>()
                 .Where(l => l.IsKind(SyntaxKind.NumericLiteralExpression))
                 .Where(l => !IsAllowed(l) && !IsInConstContext(l) && !IsInArrayIndexOrSize(l) && !IsInAttribute(l))
@@ -29,20 +30,23 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 
             if (!magicLiterals.Any()) return document;
 
-            var groups = magicLiterals.GroupBy(l => l.Token.Text);
-            foreach (var group in groups)
+            // Группирует одинаковые литералы для замены одной константой
+            IEnumerable<IGrouping<string, LiteralExpressionSyntax>> groups = magicLiterals.GroupBy(l => l.Token.Text);
+            foreach (IGrouping<string, LiteralExpressionSyntax> group in groups)
             {
-                var literalText = group.Key;
-                var typeName = GetNumericTypeName(literalText);
-                var constName = GenerateConstName(literalText);
-                var first = group.First();
-                var containingType = first.Ancestors().OfType<TypeDeclarationSyntax>().FirstOrDefault();
+                string literalText = group.Key;
+                string typeName = GetNumericTypeName(literalText);
+                string constName = GenerateConstName(literalText);
+                LiteralExpressionSyntax first = group.First();
+                TypeDeclarationSyntax? containingType = first.Ancestors().OfType<TypeDeclarationSyntax>().FirstOrDefault();
                 if (containingType == null) continue;
 
-                var typeSymbol = semanticModel.GetDeclaredSymbol(containingType, cancellationToken);
+                // Проверяет, не определена ли уже константа с таким именем
+                INamedTypeSymbol? typeSymbol = semanticModel.GetDeclaredSymbol(containingType, cancellationToken);
                 if (typeSymbol?.GetMembers(constName).Any() == true) continue;
 
-                var constField = SyntaxFactory.FieldDeclaration(
+                // Создаёт приватную константу
+                FieldDeclarationSyntax constField = SyntaxFactory.FieldDeclaration(
                         SyntaxFactory.VariableDeclaration(
                             SyntaxFactory.ParseTypeName(typeName),
                             SyntaxFactory.SingletonSeparatedList(
@@ -56,9 +60,10 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                 editor.AddMember(containingType, constField);
                 changed = true;
 
-                foreach (var lit in group)
+                // Заменяет все вхождения литерала на имя константы
+                foreach (LiteralExpressionSyntax lit in group)
                 {
-                    var replacement = SyntaxFactory.IdentifierName(constName).WithTriviaFrom(lit);
+                    IdentifierNameSyntax replacement = SyntaxFactory.IdentifierName(constName).WithTriviaFrom(lit);
                     editor.ReplaceNode(lit, replacement);
                 }
             }
@@ -66,22 +71,27 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             return changed ? editor.GetChangedDocument() : document;
         }
 
+        // Проверяет, является ли литерал разрешённым (0, 1, -1, и т.д.)
         private bool IsAllowed(LiteralExpressionSyntax literal)
         {
-            var text = literal.Token.Text;
+            string text = literal.Token.Text;
             return text == "0" || text == "1" || text == "-1" || text == "0.0" || text == "1.0" ||
                    text == "0f" || text == "1f" || text == "-1f" || text == "0.0f" || text == "1.0f";
         }
 
-        private bool IsInConstContext(LiteralExpressionSyntax literal) =>
-            literal.Ancestors().Any(a => a is AttributeSyntax || a is EnumMemberDeclarationSyntax ||
+        // Определяет, находится ли литерал в контексте, где константа не требуется (атрибут, enum, параметр по умолчанию)
+        private bool IsInConstContext(LiteralExpressionSyntax literal)
+        {
+            return literal.Ancestors().Any(a => a is AttributeSyntax || a is EnumMemberDeclarationSyntax ||
                 (a is ParameterSyntax p && p.Default?.Value == literal) ||
                 (a is VariableDeclaratorSyntax v && v.Parent?.Parent is FieldDeclarationSyntax f &&
                  f.Modifiers.Any(m => m.IsKind(SyntaxKind.ConstKeyword))));
+        }
 
+        // Проверяет, используется ли литерал как индекс массива или размер
         private bool IsInArrayIndexOrSize(LiteralExpressionSyntax literal)
         {
-            var parent = literal.Parent;
+            SyntaxNode? parent = literal.Parent;
             while (parent != null)
             {
                 if (parent is BracketedArgumentListSyntax || parent is ElementAccessExpressionSyntax)
@@ -93,11 +103,13 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             return false;
         }
 
+        // Проверяет, находится ли литерал внутри атрибута
         private bool IsInAttribute(LiteralExpressionSyntax literal)
         {
             return literal.Ancestors().OfType<AttributeSyntax>().Any();
         }
 
+        // Определяет тип числа по суффиксу
         private string GetNumericTypeName(string text)
         {
             if (text.Contains("f") || text.Contains("F")) return "float";
@@ -109,9 +121,10 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             return "int";
         }
 
+        // Генерирует имя константы на основе числового литерала
         private string GenerateConstName(string text)
         {
-            var clean = Regex.Replace(text, "[^a-zA-Z0-9]", "_");
+            string clean = Regex.Replace(text, "[^a-zA-Z0-9]", "_");
             return $"Const_{clean}";
         }
     }

@@ -8,27 +8,29 @@ using StaticCodeAnalyzer.Models;
 
 namespace StaticCodeAnalyzer.Analysis
 {
+    // Выявляет потенциальные уязвимости безопасности: SQL-инъекции и небезопасный запуск процессов
     public class SecurityVulnerabilitiesRule : IAnalyzerRule
     {
+        // Ключевые слова SQL для выявления конкатенации запросов
         private static readonly string[] SqlKeywords = { "SELECT", "INSERT", "UPDATE", "DELETE", "FROM", "WHERE", "JOIN", "UNION" };
 
         public Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
         {
-            var issues = new List<AnalysisIssue>();
+            List<AnalysisIssue> issues = new List<AnalysisIssue>();
 
-            // SQL-инъекции
-            var stringConcatenations = root.DescendantNodes()
+            // Проверяет SQL-инъекции через конкатенацию строк
+            IEnumerable<BinaryExpressionSyntax> stringConcatenations = root.DescendantNodes()
                 .OfType<BinaryExpressionSyntax>()
                 .Where(b => b.IsKind(SyntaxKind.AddExpression) && ContainsSqlKeyword(b));
 
-            foreach (var expr in stringConcatenations)
+            foreach (BinaryExpressionSyntax expr in stringConcatenations)
             {
-                var location = expr.GetLocation();
+                Microsoft.CodeAnalysis.Location? location = expr.GetLocation();
                 if (location != null)
                 {
-                    var lineSpan = location.GetLineSpan();
-                    var containingMethod = expr.FirstAncestorOrSelf<MethodDeclarationSyntax>();
-                    var containingClass = expr.FirstAncestorOrSelf<ClassDeclarationSyntax>();
+                    FileLinePositionSpan lineSpan = location.GetLineSpan();
+                    MethodDeclarationSyntax? containingMethod = expr.FirstAncestorOrSelf<MethodDeclarationSyntax>();
+                    ClassDeclarationSyntax? containingClass = expr.FirstAncestorOrSelf<ClassDeclarationSyntax>();
                     issues.Add(new AnalysisIssue
                     {
                         Severity = "Критический",
@@ -46,22 +48,22 @@ namespace StaticCodeAnalyzer.Analysis
                 }
             }
 
-            // Process.Start
-            var processCalls = root.DescendantNodes()
+            // Проверяет вызовы Process.Start с непроверенными аргументами
+            IEnumerable<InvocationExpressionSyntax> processCalls = root.DescendantNodes()
                 .OfType<InvocationExpressionSyntax>()
                 .Where(IsProcessStartCall);
 
-            foreach (var call in processCalls)
+            foreach (InvocationExpressionSyntax call in processCalls)
             {
-                var firstArg = call.ArgumentList.Arguments.FirstOrDefault()?.Expression;
+                ExpressionSyntax? firstArg = call.ArgumentList.Arguments.FirstOrDefault()?.Expression;
                 if (firstArg is not LiteralExpressionSyntax)
                 {
-                    var location = call.GetLocation();
+                    Microsoft.CodeAnalysis.Location? location = call.GetLocation();
                     if (location != null)
                     {
-                        var lineSpan = location.GetLineSpan();
-                        var containingMethod = call.FirstAncestorOrSelf<MethodDeclarationSyntax>();
-                        var containingClass = call.FirstAncestorOrSelf<ClassDeclarationSyntax>();
+                        FileLinePositionSpan lineSpan = location.GetLineSpan();
+                        MethodDeclarationSyntax? containingMethod = call.FirstAncestorOrSelf<MethodDeclarationSyntax>();
+                        ClassDeclarationSyntax? containingClass = call.FirstAncestorOrSelf<ClassDeclarationSyntax>();
                         issues.Add(new AnalysisIssue
                         {
                             Severity = "Высокий",
@@ -83,12 +85,14 @@ namespace StaticCodeAnalyzer.Analysis
             return Task.FromResult(issues);
         }
 
+        // Проверяет, содержит ли выражение ключевое слово SQL
         private bool ContainsSqlKeyword(BinaryExpressionSyntax expr)
         {
-            var text = expr.ToString().ToUpperInvariant();
+            string text = expr.ToString().ToUpperInvariant();
             return SqlKeywords.Any(k => text.Contains(k));
         }
 
+        // Определяет, является ли вызов Process.Start
         private bool IsProcessStartCall(InvocationExpressionSyntax invocation)
         {
             if (invocation.Expression is MemberAccessExpressionSyntax member)

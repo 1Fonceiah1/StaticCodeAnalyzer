@@ -15,21 +15,21 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 
         public async Task<Document> ApplyAsync(Document document, CancellationToken cancellationToken)
         {
-            var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
-            var editor = await DocumentEditor.CreateAsync(document, cancellationToken).ConfigureAwait(false);
+            SyntaxNode root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
+            DocumentEditor editor = await DocumentEditor.CreateAsync(document, cancellationToken).ConfigureAwait(false);
             bool changed = false;
 
             bool anyChange;
             do
             {
                 anyChange = false;
-                root = await editor.GetChangedDocument().GetSyntaxRootAsync(cancellationToken);
-                editor = await DocumentEditor.CreateAsync(editor.GetChangedDocument(), cancellationToken);
+                root = await editor.GetChangedDocument().GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
+                editor = await DocumentEditor.CreateAsync(editor.GetChangedDocument(), cancellationToken).ConfigureAwait(false);
 
-                // 1. Упрощаем присваивания
-                foreach (var assign in root.DescendantNodes().OfType<AssignmentExpressionSyntax>())
+                // Упрощает бесполезные арифметические присваивания (x = x + 0 → x)
+                foreach (AssignmentExpressionSyntax assign in root.DescendantNodes().OfType<AssignmentExpressionSyntax>())
                 {
-                    var simplified = SimplifyAssignment(assign);
+                    ExpressionSyntax simplified = SimplifyAssignment(assign);
                     if (simplified != assign)
                     {
                         editor.ReplaceNode(assign, simplified);
@@ -37,44 +37,44 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                     }
                 }
 
-                // 2. Удаляем x = x;
-                var uselessAssignments = root.DescendantNodes()
+                // Удаляет присваивания вида x = x;
+                List<ExpressionStatementSyntax> uselessAssignments = root.DescendantNodes()
                     .OfType<ExpressionStatementSyntax>()
                     .Where(stmt => stmt.Expression is AssignmentExpressionSyntax a && a.Left.ToString() == a.Right.ToString())
                     .ToList();
-                foreach (var stmt in uselessAssignments)
+                foreach (ExpressionStatementSyntax stmt in uselessAssignments)
                 {
                     editor.RemoveNode(stmt);
                     anyChange = true;
                 }
 
-                // 3. Удаляем просто идентификатор;
-                var uselessIds = root.DescendantNodes()
+                // Удаляет операторы, состоящие из одного идентификатора
+                List<ExpressionStatementSyntax> uselessIds = root.DescendantNodes()
                     .OfType<ExpressionStatementSyntax>()
                     .Where(stmt => stmt.Expression is IdentifierNameSyntax)
                     .ToList();
-                foreach (var stmt in uselessIds)
+                foreach (ExpressionStatementSyntax stmt in uselessIds)
                 {
                     editor.RemoveNode(stmt);
                     anyChange = true;
                 }
 
-                // 4. Удаляем пустые циклы for
-                foreach (var loop in root.DescendantNodes().OfType<ForStatementSyntax>().Where(IsTrivialForLoop))
+                // Удаляет тривиальные циклы for (одна итерация без побочных эффектов)
+                foreach (ForStatementSyntax loop in root.DescendantNodes().OfType<ForStatementSyntax>().Where(IsTrivialForLoop))
                 {
                     editor.RemoveNode(loop);
                     anyChange = true;
                 }
 
-                // 5. Удаляем пустые циклы while
-                foreach (var loop in root.DescendantNodes().OfType<WhileStatementSyntax>().Where(IsTrivialWhileLoop))
+                // Удаляет тривиальные циклы while (одна итерация без побочных эффектов)
+                foreach (WhileStatementSyntax loop in root.DescendantNodes().OfType<WhileStatementSyntax>().Where(IsTrivialWhileLoop))
                 {
                     editor.RemoveNode(loop);
                     anyChange = true;
                 }
 
-                // 6. Удаляем пустые else
-                foreach (var ifStmt in root.DescendantNodes().OfType<IfStatementSyntax>())
+                // Удаляет пустые блоки else
+                foreach (IfStatementSyntax ifStmt in root.DescendantNodes().OfType<IfStatementSyntax>())
                 {
                     if (ifStmt.Else != null && IsEffectivelyEmpty(ifStmt.Else.Statement))
                     {
@@ -83,8 +83,8 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                     }
                 }
 
-                // 7. Удаляем пустые блоки if
-                foreach (var ifStmt in root.DescendantNodes().OfType<IfStatementSyntax>())
+                // Удаляет пустые блоки if (без else)
+                foreach (IfStatementSyntax ifStmt in root.DescendantNodes().OfType<IfStatementSyntax>())
                 {
                     if (ifStmt.Else == null && IsEffectivelyEmpty(ifStmt.Statement))
                     {
@@ -93,12 +93,12 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                     }
                 }
 
-                // 8. Удаляем дублирующиеся присваивания подряд
-                var methods = root.DescendantNodes().OfType<MethodDeclarationSyntax>();
-                foreach (var method in methods)
+                // Удаляет дублирующиеся присваивания, идущие подряд
+                List<MethodDeclarationSyntax> methods = root.DescendantNodes().OfType<MethodDeclarationSyntax>().ToList();
+                foreach (MethodDeclarationSyntax method in methods)
                 {
                     if (method.Body == null) continue;
-                    var statements = method.Body.Statements.ToList();
+                    List<StatementSyntax> statements = method.Body.Statements.ToList();
                     for (int i = 0; i < statements.Count - 1; i++)
                     {
                         if (statements[i] is ExpressionStatementSyntax cur && statements[i+1] is ExpressionStatementSyntax nxt &&
@@ -112,27 +112,27 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                     }
                 }
 
-                // 9. Удаляем пары противоположных операций
-                var oppositePairs = FindOppositeOperationPairs(root);
-                foreach (var stmt in oppositePairs)
+                // Удаляет пары противоположных операций (x = x + 1; x = x - 1;)
+                List<ExpressionStatementSyntax> oppositePairs = FindOppositeOperationPairs(root);
+                foreach (ExpressionStatementSyntax stmt in oppositePairs)
                 {
                     editor.RemoveNode(stmt);
                     anyChange = true;
                 }
 
-                // 10. Удаляем бесполезные инкременты
-                var uselessIncrements = FindUselessIncrements(root);
-                foreach (var stmt in uselessIncrements)
+                // Удаляет бесполезные инкременты неиспользуемых переменных
+                List<ExpressionStatementSyntax> uselessIncrements = FindUselessIncrements(root);
+                foreach (ExpressionStatementSyntax stmt in uselessIncrements)
                 {
                     editor.RemoveNode(stmt);
                     anyChange = true;
                 }
 
-                // 11. Преобразуем if (x == false) { x = false; } → x = false;
-                var selfAssignIfs = FindSelfAssignIf(root);
-                foreach (var ifStmt in selfAssignIfs)
+                // Преобразует if (x == false) { x = false; } → x = false;
+                List<IfStatementSyntax> selfAssignIfs = FindSelfAssignIf(root);
+                foreach (IfStatementSyntax ifStmt in selfAssignIfs)
                 {
-                    var assign = ((ExpressionStatementSyntax)((BlockSyntax)ifStmt.Statement).Statements[0]).Expression;
+                    AssignmentExpressionSyntax assign = (AssignmentExpressionSyntax)((ExpressionStatementSyntax)((BlockSyntax)ifStmt.Statement).Statements[0]).Expression;
                     editor.ReplaceNode(ifStmt, SyntaxFactory.ExpressionStatement(assign));
                     anyChange = true;
                 }
@@ -142,10 +142,11 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             return editor.GetChangedDocument();
         }
 
+        // Упрощает присваивание, заменяя x = x + 0 на x, x = x * 1 на x и т.д.
         private ExpressionSyntax SimplifyAssignment(AssignmentExpressionSyntax assign)
         {
             if (!assign.IsKind(SyntaxKind.SimpleAssignmentExpression)) return assign;
-            var right = assign.Right;
+            ExpressionSyntax right = assign.Right;
             if (right is BinaryExpressionSyntax binary)
             {
                 if ((binary.IsKind(SyntaxKind.AddExpression) || binary.IsKind(SyntaxKind.SubtractExpression)) &&
@@ -162,20 +163,28 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             return assign;
         }
 
+        // Проверяет идентичность двух выражений по текстовому представлению
         private bool AreIdentical(ExpressionSyntax left, ExpressionSyntax right) => left.ToString() == right.ToString();
 
-        private bool IsZero(ExpressionSyntax expr) =>
-            expr is LiteralExpressionSyntax lit && lit.IsKind(SyntaxKind.NumericLiteralExpression) &&
-            (lit.Token.Text == "0" || lit.Token.Text == "0.0" || lit.Token.Text == "0f" || lit.Token.Text == "0d" || lit.Token.Text == "0m");
+        // Проверяет, является ли выражение числовым нулём
+        private bool IsZero(ExpressionSyntax expr)
+        {
+            return expr is LiteralExpressionSyntax lit && lit.IsKind(SyntaxKind.NumericLiteralExpression) &&
+                   (lit.Token.Text == "0" || lit.Token.Text == "0.0" || lit.Token.Text == "0f" || lit.Token.Text == "0d" || lit.Token.Text == "0m");
+        }
 
-        private bool IsOne(ExpressionSyntax expr) =>
-            expr is LiteralExpressionSyntax lit && lit.IsKind(SyntaxKind.NumericLiteralExpression) &&
-            (lit.Token.Text == "1" || lit.Token.Text == "1.0" || lit.Token.Text == "1f" || lit.Token.Text == "1d" || lit.Token.Text == "1m");
+        // Проверяет, является ли выражение числовой единицей
+        private bool IsOne(ExpressionSyntax expr)
+        {
+            return expr is LiteralExpressionSyntax lit && lit.IsKind(SyntaxKind.NumericLiteralExpression) &&
+                   (lit.Token.Text == "1" || lit.Token.Text == "1.0" || lit.Token.Text == "1f" || lit.Token.Text == "1d" || lit.Token.Text == "1m");
+        }
 
+        // Определяет, является ли цикл for тривиальным (одна итерация без побочных эффектов)
         private bool IsTrivialForLoop(ForStatementSyntax forLoop)
         {
             if (forLoop.Declaration == null || forLoop.Condition == null || forLoop.Incrementors.Count == 0) return false;
-            var declarator = forLoop.Declaration.Variables.FirstOrDefault();
+            VariableDeclaratorSyntax? declarator = forLoop.Declaration.Variables.FirstOrDefault();
             if (declarator?.Initializer?.Value is not LiteralExpressionSyntax initLit) return false;
             if (!IsZero(initLit)) return false;
             if (forLoop.Condition is BinaryExpressionSyntax cond &&
@@ -187,13 +196,14 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             return false;
         }
 
+        // Определяет, является ли цикл while тривиальным (одна итерация без побочных эффектов)
         private bool IsTrivialWhileLoop(WhileStatementSyntax whileLoop)
         {
             if (whileLoop.Condition is BinaryExpressionSyntax cond &&
                 cond.IsKind(SyntaxKind.LessThanExpression) &&
                 cond.Right is LiteralExpressionSyntax rightLit && IsOne(rightLit))
             {
-                var increments = whileLoop.Statement.DescendantNodes()
+                IEnumerable<AssignmentExpressionSyntax> increments = whileLoop.Statement.DescendantNodes()
                     .OfType<AssignmentExpressionSyntax>()
                     .Where(a => a.IsKind(SyntaxKind.AddAssignmentExpression) ||
                                 (a.IsKind(SyntaxKind.SimpleAssignmentExpression) &&
@@ -205,9 +215,10 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             return false;
         }
 
+        // Проверяет наличие побочных эффектов (изменение элементов массива или свойств)
         private bool HasSideEffects(StatementSyntax statement)
         {
-            foreach (var assign in statement.DescendantNodes().OfType<AssignmentExpressionSyntax>())
+            foreach (AssignmentExpressionSyntax assign in statement.DescendantNodes().OfType<AssignmentExpressionSyntax>())
             {
                 if (assign.Left is ElementAccessExpressionSyntax || assign.Left is MemberAccessExpressionSyntax)
                     return true;
@@ -215,17 +226,19 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             return false;
         }
 
+        // Проверяет, является ли блок или оператор фактически пустым (не содержит полезного кода)
         private bool IsEffectivelyEmpty(StatementSyntax statement)
         {
             if (statement is BlockSyntax block)
             {
-                foreach (var stmt in block.Statements)
+                foreach (StatementSyntax stmt in block.Statements)
                     if (!IsUselessOrDeclaration(stmt)) return false;
                 return true;
             }
             return IsUselessOrDeclaration(statement);
         }
 
+        // Определяет, является ли оператор бесполезным или объявлением (не влияющим на логику)
         private bool IsUselessOrDeclaration(StatementSyntax stmt)
         {
             if (stmt is EmptyStatementSyntax) return true;
@@ -238,14 +251,15 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             return false;
         }
 
+        // Находит пары противоположных операций (x = x + 1; x = x - 1;)
         private List<ExpressionStatementSyntax> FindOppositeOperationPairs(SyntaxNode root)
         {
-            var pairs = new List<ExpressionStatementSyntax>();
-            var methods = root.DescendantNodes().OfType<MethodDeclarationSyntax>();
-            foreach (var method in methods)
+            List<ExpressionStatementSyntax> pairs = new List<ExpressionStatementSyntax>();
+            List<MethodDeclarationSyntax> methods = root.DescendantNodes().OfType<MethodDeclarationSyntax>().ToList();
+            foreach (MethodDeclarationSyntax method in methods)
             {
                 if (method.Body == null) continue;
-                var statements = method.Body.Statements.ToList();
+                List<StatementSyntax> statements = method.Body.Statements.ToList();
                 for (int i = 0; i < statements.Count - 1; i++)
                 {
                     if (statements[i] is ExpressionStatementSyntax stmt1 &&
@@ -261,6 +275,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             return pairs;
         }
 
+        // Проверяет, являются ли два присваивания противоположными (x = x + 1 и x = x - 1)
         private bool IsOpposite(AssignmentExpressionSyntax a1, AssignmentExpressionSyntax a2)
         {
             if (!a1.IsKind(SyntaxKind.SimpleAssignmentExpression) || !a2.IsKind(SyntaxKind.SimpleAssignmentExpression))
@@ -280,20 +295,21 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             return false;
         }
 
+        // Находит бесполезные инкременты (переменная инкрементируется, но не используется)
         private List<ExpressionStatementSyntax> FindUselessIncrements(SyntaxNode root)
         {
-            var useless = new List<ExpressionStatementSyntax>();
-            var methods = root.DescendantNodes().OfType<MethodDeclarationSyntax>();
-            foreach (var method in methods)
+            List<ExpressionStatementSyntax> useless = new List<ExpressionStatementSyntax>();
+            List<MethodDeclarationSyntax> methods = root.DescendantNodes().OfType<MethodDeclarationSyntax>().ToList();
+            foreach (MethodDeclarationSyntax method in methods)
             {
                 if (method.Body == null) continue;
-                var allIdentifiers = method.Body.DescendantNodes().OfType<IdentifierNameSyntax>().Select(id => id.Identifier.Text).ToList();
-                var declaredVars = method.Body.DescendantNodes()
+                List<string> allIdentifiers = method.Body.DescendantNodes().OfType<IdentifierNameSyntax>().Select(id => id.Identifier.Text).ToList();
+                HashSet<string> declaredVars = method.Body.DescendantNodes()
                     .OfType<VariableDeclaratorSyntax>()
                     .Select(v => v.Identifier.Text)
                     .ToHashSet();
 
-                var increments = method.Body.DescendantNodes()
+                List<ExpressionStatementSyntax> increments = method.Body.DescendantNodes()
                     .OfType<ExpressionStatementSyntax>()
                     .Where(stmt => stmt.Expression is AssignmentExpressionSyntax assign &&
                                    (assign.IsKind(SyntaxKind.AddAssignmentExpression) ||
@@ -302,9 +318,9 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                                      bin.IsKind(SyntaxKind.AddExpression) && IsOne(bin.Right))))
                     .ToList();
 
-                foreach (var inc in increments)
+                foreach (ExpressionStatementSyntax inc in increments)
                 {
-                    var left = ((AssignmentExpressionSyntax)inc.Expression).Left.ToString();
+                    string left = ((AssignmentExpressionSyntax)inc.Expression).Left.ToString();
                     int usageCount = allIdentifiers.Count(id => id == left);
                     if (usageCount <= 1 && declaredVars.Contains(left))
                         useless.Add(inc);
@@ -313,11 +329,12 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             return useless;
         }
 
+        // Находит конструкции if (x == false) { x = false; } для замены на прямое присваивание
         private List<IfStatementSyntax> FindSelfAssignIf(SyntaxNode root)
         {
-            var result = new List<IfStatementSyntax>();
-            var ifStatements = root.DescendantNodes().OfType<IfStatementSyntax>();
-            foreach (var ifStmt in ifStatements)
+            List<IfStatementSyntax> result = new List<IfStatementSyntax>();
+            IEnumerable<IfStatementSyntax> ifStatements = root.DescendantNodes().OfType<IfStatementSyntax>();
+            foreach (IfStatementSyntax ifStmt in ifStatements)
             {
                 if (ifStmt.Condition is BinaryExpressionSyntax bin && bin.IsKind(SyntaxKind.EqualsExpression) &&
                     bin.Right is LiteralExpressionSyntax lit && lit.Token.Text == "false" &&

@@ -44,9 +44,10 @@ namespace StaticCodeAnalyzer
             Logger.Log("AppStart", "Приложение запущено");
         }
 
+        // Открывает диалог выбора файла и загружает его в дерево
         private async void OpenFile_Click(object sender, RoutedEventArgs e)
         {
-            var dialog = new OpenFileDialog();
+            OpenFileDialog dialog = new OpenFileDialog();
             dialog.Filter = "C# файлы (*.cs)|*.cs|Все файлы (*.*)|*.*";
             if (dialog.ShowDialog() == true)
             {
@@ -58,9 +59,10 @@ namespace StaticCodeAnalyzer
             }
         }
 
+        // Открывает диалог выбора папки и загружает её содержимое в дерево
         private async void OpenFolder_Click(object sender, RoutedEventArgs e)
         {
-            var dialog = new OpenFolderDialog();
+            OpenFolderDialog dialog = new OpenFolderDialog();
             if (dialog.ShowDialog() == true)
             {
                 _currentPath = dialog.FolderName;
@@ -71,11 +73,12 @@ namespace StaticCodeAnalyzer
             }
         }
 
+        // Загружает один файл в дерево (корневой узел)
         private Task LoadFileTreeAsync(string filePath)
         {
             FilesTreeView.Items.Clear();
             _allRootNodes.Clear();
-            var root = new FileTreeNode
+            FileTreeNode root = new FileTreeNode
             {
                 Name = Path.GetFileName(filePath),
                 FullPath = filePath,
@@ -87,11 +90,12 @@ namespace StaticCodeAnalyzer
             return Task.CompletedTask;
         }
 
+        // Рекурсивно загружает структуру папок и файлов в дерево
         private async Task LoadFolderTreeAsync(string folderPath)
         {
             FilesTreeView.Items.Clear();
             _allRootNodes.Clear();
-            var root = new FileTreeNode
+            FileTreeNode root = new FileTreeNode
             {
                 Name = Path.GetFileName(folderPath),
                 FullPath = folderPath,
@@ -103,16 +107,17 @@ namespace StaticCodeAnalyzer
             FilesTreeView.Items.Add(root);
         }
 
+        // Рекурсивно добавляет подпапки и .cs-файлы в узел дерева
         private async Task AddFilesToTreeAsync(FileTreeNode parent, string directory)
         {
             try
             {
-                var directories = await Task.Run(() => Directory.GetDirectories(directory));
-                var files = await Task.Run(() => Directory.GetFiles(directory, "*.cs"));
+                string[] directories = await Task.Run(() => Directory.GetDirectories(directory));
+                string[] files = await Task.Run(() => Directory.GetFiles(directory, "*.cs"));
 
-                foreach (var dir in directories)
+                foreach (string dir in directories)
                 {
-                    var subNode = new FileTreeNode
+                    FileTreeNode subNode = new FileTreeNode
                     {
                         Name = Path.GetFileName(dir),
                         FullPath = dir,
@@ -123,9 +128,9 @@ namespace StaticCodeAnalyzer
                     await AddFilesToTreeAsync(subNode, dir);
                 }
 
-                foreach (var file in files)
+                foreach (string file in files)
                 {
-                    var fileNode = new FileTreeNode
+                    FileTreeNode fileNode = new FileTreeNode
                     {
                         Name = Path.GetFileName(file),
                         FullPath = file,
@@ -141,10 +146,11 @@ namespace StaticCodeAnalyzer
             }
         }
 
+        // Извлекает все файлы (узлы без папок) из списка корневых узлов
         private List<FileTreeNode> GetAllFilesFromNodes(List<FileTreeNode> nodes)
         {
-            var result = new List<FileTreeNode>();
-            foreach (var node in nodes)
+            List<FileTreeNode> result = new List<FileTreeNode>();
+            foreach (FileTreeNode node in nodes)
             {
                 if (!node.IsFolder)
                     result.Add(node);
@@ -154,6 +160,7 @@ namespace StaticCodeAnalyzer
             return result;
         }
 
+        // Запускает анализ для выбранных файлов (исключая помеченные)
         private async void Analyze_Click(object sender, RoutedEventArgs e)
         {
             if (string.IsNullOrEmpty(_currentPath) && _allRootNodes.Count == 0)
@@ -164,7 +171,7 @@ namespace StaticCodeAnalyzer
 
             _cancellationTokenSource?.Cancel();
             _cancellationTokenSource = new CancellationTokenSource();
-            var token = _cancellationTokenSource.Token;
+            CancellationToken token = _cancellationTokenSource.Token;
 
             StatusText.Text = "Анализ...";
             Mouse.OverrideCursor = Cursors.Wait;
@@ -172,8 +179,8 @@ namespace StaticCodeAnalyzer
 
             try
             {
-                var allFiles = GetAllFilesFromNodes(_allRootNodes);
-                var filesToAnalyze = allFiles.Where(f => !f.IsExcluded).Select(f => f.FullPath).ToList();
+                List<FileTreeNode> allFiles = GetAllFilesFromNodes(_allRootNodes);
+                List<string> filesToAnalyze = allFiles.Where(f => !f.IsExcluded).Select(f => f.FullPath).ToList();
 
                 if (filesToAnalyze.Count == 0)
                 {
@@ -181,12 +188,12 @@ namespace StaticCodeAnalyzer
                     return;
                 }
 
-                var issues = await Task.Run(() => _analysisService.AnalyzeFiles(filesToAnalyze, null, token), token);
+                List<AnalysisIssue> issues = await Task.Run(() => _analysisService.AnalyzeFiles(filesToAnalyze, null, token), token);
                 _currentIssues = issues;
 
                 if (_analysisService.Engine.LastErrors.Any())
                 {
-                    var errorList = string.Join("\n", _analysisService.Engine.LastErrors.Select(e => $"{e.RuleName} в {e.FilePath}: {e.ErrorMessage}"));
+                    string errorList = string.Join("\n", _analysisService.Engine.LastErrors.Select(e => $"{e.RuleName} в {e.FilePath}: {e.ErrorMessage}"));
                     MessageBox.Show($"Некоторые правила завершились с ошибками:\n{errorList}", "Ошибки анализа", MessageBoxButton.OK, MessageBoxImage.Warning);
                 }
 
@@ -216,24 +223,26 @@ namespace StaticCodeAnalyzer
             }
         }
 
+        // Открывает окно вставки кода для анализа
         private async void PasteCode_Click(object sender, RoutedEventArgs e)
         {
-            var inputWindow = new CodeInputWindow();
+            CodeInputWindow inputWindow = new CodeInputWindow();
             inputWindow.Owner = this;
             inputWindow.ShowDialog();
             if (!inputWindow.IsAnalyze || string.IsNullOrWhiteSpace(inputWindow.EnteredCode))
                 return;
-            var editor = new CodeEditorWindow(null, inputWindow.EnteredCode);
+            CodeEditorWindow editor = new CodeEditorWindow(null, inputWindow.EnteredCode);
             editor.Owner = this;
             editor.ShowDialog();
         }
 
+        // Сохраняет результаты анализа в базу данных
         private async Task SaveAnalysisResultsToDbAsync(List<AnalysisIssue> issues, string path, bool isFolder)
         {
             try
             {
-                var project = await _repository.GetOrCreateProjectAsync(path, isFolder ? Path.GetFileName(path) : Path.GetFileNameWithoutExtension(path));
-                var scan = new Scan
+                Project project = await _repository.GetOrCreateProjectAsync(path, isFolder ? Path.GetFileName(path) : Path.GetFileNameWithoutExtension(path));
+                Scan scan = new Scan
                 {
                     ProjectId = project.ProjectId,
                     StartTime = DateTime.Now,
@@ -244,7 +253,7 @@ namespace StaticCodeAnalyzer
                 };
                 await _repository.AddScanAsync(scan);
 
-                var results = issues.Select(i => new AnalysisResult
+                List<AnalysisResult> results = issues.Select(i => new AnalysisResult
                 {
                     ScanId = scan.ScanId,
                     ProjectId = project.ProjectId,
@@ -256,7 +265,8 @@ namespace StaticCodeAnalyzer
                     IssueSeverity = i.Severity,
                     IssueCode = i.Code,
                     IssueDescription = i.Description,
-                    SuggestedFix = i.Suggestion
+                    SuggestedFix = i.Suggestion,
+                    CreatedAt = DateTime.Now
                 }).ToList();
 
                 await _repository.AddAnalysisResultsAsync(results);
@@ -268,6 +278,7 @@ namespace StaticCodeAnalyzer
             }
         }
 
+        // Очищает результаты анализа и дерево файлов
         private void Clear_Click(object sender, RoutedEventArgs e)
         {
             ResultsGrid.ItemsSource = null;
@@ -280,6 +291,7 @@ namespace StaticCodeAnalyzer
             Logger.Log("Clear", "Очистка результатов и дерева");
         }
 
+        // Скрывает или показывает левую панель с деревом
         private void ToggleTreePanel_Checked(object sender, RoutedEventArgs e)
         {
             TreeColumn.Width = new GridLength(0);
@@ -292,35 +304,39 @@ namespace StaticCodeAnalyzer
             ToggleTreePanel.Content = "Скрыть дерево";
         }
 
+        // Открывает файл в редакторе при двойном щелчке по узлу дерева
         private void FilesTreeView_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
-            var item = FilesTreeView.SelectedItem as FileTreeNode;
+            FileTreeNode item = FilesTreeView.SelectedItem as FileTreeNode;
             if (item != null && !item.IsFolder && File.Exists(item.FullPath))
             {
                 string code = File.ReadAllText(item.FullPath);
-                var editor = new CodeEditorWindow(item.FullPath, code);
+                CodeEditorWindow editor = new CodeEditorWindow(item.FullPath, code);
                 editor.Owner = this;
                 editor.ShowDialog();
             }
         }
 
+        // Открывает редактор кода с переходом на строку проблемы при двойном щелчке по строке результата
         private void ResultsGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
-            var issue = ResultsGrid.SelectedItem as AnalysisIssue;
+            AnalysisIssue issue = ResultsGrid.SelectedItem as AnalysisIssue;
             if (issue == null || string.IsNullOrEmpty(issue.FilePath) || !File.Exists(issue.FilePath))
                 return;
 
             string code = File.ReadAllText(issue.FilePath);
-            var editor = new CodeEditorWindow(issue.FilePath, code, issue.LineNumber);
+            CodeEditorWindow editor = new CodeEditorWindow(issue.FilePath, code, issue.LineNumber);
             editor.Owner = this;
             editor.ShowDialog();
         }
 
+        // Применяет фильтры при изменении параметров фильтрации
         private void Filter_Changed(object sender, EventArgs e)
         {
             _resultsViewSource?.View?.Refresh();
         }
 
+        // Сбрасывает все фильтры
         private void ResetFilter_Click(object sender, RoutedEventArgs e)
         {
             FilterSeverity.SelectedIndex = 0;
@@ -328,16 +344,17 @@ namespace StaticCodeAnalyzer
             FilterFile.Text = "";
         }
 
+        // Логика фильтрации результатов
         private void ResultsFilter(object sender, FilterEventArgs e)
         {
-            var issue = e.Item as AnalysisIssue;
+            AnalysisIssue issue = e.Item as AnalysisIssue;
             if (issue == null)
             {
                 e.Accepted = false;
                 return;
             }
 
-            var severityItem = FilterSeverity.SelectedItem as ComboBoxItem;
+            ComboBoxItem severityItem = FilterSeverity.SelectedItem as ComboBoxItem;
             if (severityItem != null && severityItem.Content.ToString() != "Все")
             {
                 if (issue.Severity != severityItem.Content.ToString())
@@ -368,6 +385,7 @@ namespace StaticCodeAnalyzer
             e.Accepted = true;
         }
 
+        // Отменяет анализ и освобождает ресурсы при закрытии окна
         private void MainWindow_Closing(object sender, CancelEventArgs e)
         {
             _cancellationTokenSource?.Cancel();

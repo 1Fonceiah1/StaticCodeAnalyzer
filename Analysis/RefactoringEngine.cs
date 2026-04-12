@@ -11,11 +11,12 @@ using StaticCodeAnalyzer.Services;
 
 namespace StaticCodeAnalyzer.Analysis
 {
+    // Движок рефакторинга, последовательно применяет правила из Analysis/Refactoring к документу
     public class RefactoringEngine
     {
         private readonly List<IRefactoringRule> _rules;
         private readonly AdhocWorkspace _workspace;
-        private readonly object _workspaceLock = new();
+        private readonly object _workspaceLock = new object();
 
         public RefactoringEngine()
         {
@@ -39,7 +40,7 @@ namespace StaticCodeAnalyzer.Analysis
             };
 
             _workspace = new AdhocWorkspace();
-            var projectInfo = ProjectInfo.Create(
+            ProjectInfo projectInfo = ProjectInfo.Create(
                 ProjectId.CreateNewId(),
                 VersionStamp.Create(),
                 "RefactoringProject",
@@ -50,6 +51,7 @@ namespace StaticCodeAnalyzer.Analysis
             _workspace.AddProject(projectInfo);
         }
 
+        // Возвращает коды проблем, которые могут быть исправлены хотя бы одним правилом
         public HashSet<string> GetFixableIssueCodes()
         {
             return new HashSet<string>
@@ -72,12 +74,14 @@ namespace StaticCodeAnalyzer.Analysis
             };
         }
 
+        // Применяет рефакторинг к строке кода (упрощённая версия без выбора правил)
         public async Task<string> ApplyRefactoringAsync(string code)
         {
-            var result = await ApplyRefactoringWithRollbackAsync(code, null, CancellationToken.None);
-            return result.NewCode;
+            (string newCode, bool success, List<string> errors) = await ApplyRefactoringWithRollbackAsync(code, null, CancellationToken.None);
+            return newCode;
         }
 
+        // Основной метод: применяет рефакторинг с возможностью отката, возвращает изменённый код и ошибки
         public async Task<(string NewCode, bool Success, List<string> Errors)> ApplyRefactoringWithRollbackAsync(
             string code,
             HashSet<string> allowedRuleCodes = null,
@@ -86,20 +90,20 @@ namespace StaticCodeAnalyzer.Analysis
         {
             lock (_workspaceLock)
             {
-                var project = _workspace.CurrentSolution.Projects.First();
-                var existingDoc = project.Documents.FirstOrDefault();
+                Project project = _workspace.CurrentSolution.Projects.First();
+                Document existingDoc = project.Documents.FirstOrDefault();
                 if (existingDoc != null)
                 {
-                    var newSolution = _workspace.CurrentSolution.RemoveDocument(existingDoc.Id);
+                    Solution newSolution = _workspace.CurrentSolution.RemoveDocument(existingDoc.Id);
                     _workspace.TryApplyChanges(newSolution);
                 }
             }
 
-            var document = _workspace.AddDocument(_workspace.CurrentSolution.Projects.First().Id, "TempDocument.cs", SourceText.From(code));
-            var errors = new List<string>();
+            Document document = _workspace.AddDocument(_workspace.CurrentSolution.Projects.First().Id, "TempDocument.cs", SourceText.From(code));
+            List<string> errors = new List<string>();
             bool anyChange = false;
 
-            var rulesToApply = _rules;
+            List<IRefactoringRule> rulesToApply = _rules;
             if (allowedRuleCodes != null && allowedRuleCodes.Any())
             {
                 rulesToApply = _rules.Where(r => r.TargetIssueCodes.Any(c => allowedRuleCodes.Contains(c))).ToList();
@@ -108,13 +112,13 @@ namespace StaticCodeAnalyzer.Analysis
             int total = rulesToApply.Count;
             int processed = 0;
 
-            foreach (var rule in rulesToApply)
+            foreach (IRefactoringRule rule in rulesToApply)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
                 try
                 {
-                    var newDocument = await rule.ApplyAsync(document, cancellationToken).ConfigureAwait(false);
+                    Document newDocument = await rule.ApplyAsync(document, cancellationToken).ConfigureAwait(false);
                     if (newDocument != document)
                     {
                         document = newDocument;
@@ -134,16 +138,17 @@ namespace StaticCodeAnalyzer.Analysis
             if (!anyChange && errors.Any())
                 return (code, false, errors);
 
-            var finalRoot = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
+            SyntaxNode finalRoot = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
             if (finalRoot != null)
             {
-                var normalized = finalRoot.NormalizeWhitespace(indentation: "    ", elasticTrivia: true, eol: "\n");
+                SyntaxNode normalized = finalRoot.NormalizeWhitespace(indentation: "    ", elasticTrivia: true, eol: "\n");
                 return (normalized.ToFullString(), true, errors);
             }
 
             return (code, false, errors);
         }
 
+        // Предоставляет метаданные для компиляции в рабочей области
         private static IEnumerable<MetadataReference> GetDefaultMetadataReferences()
         {
             return new[]

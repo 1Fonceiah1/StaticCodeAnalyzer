@@ -12,10 +12,11 @@ using StaticCodeAnalyzer.Services;
 
 namespace StaticCodeAnalyzer.Analysis
 {
+    // Движок анализа, управляет выполнением всех правил для файлов проекта
     public class AnalyzerEngine
     {
         private readonly List<IAnalyzerRule> _rules;
-        public List<RuleError> LastErrors { get; private set; } = new();
+        public List<RuleError> LastErrors { get; private set; } = new List<RuleError>();
 
         public AnalyzerEngine()
         {
@@ -40,45 +41,47 @@ namespace StaticCodeAnalyzer.Analysis
             };
         }
 
+        // Выполняет анализ одного файла по его пути
         public async Task<List<AnalysisIssue>> AnalyzeFileAsync(string filePath)
         {
-            var directory = Path.GetDirectoryName(filePath);
+            string directory = Path.GetDirectoryName(filePath);
             if (string.IsNullOrEmpty(directory))
                 throw new ArgumentException("Не удалось определить директорию файла.");
 
-            var context = await ProjectContext.CreateAsync(directory);
+            ProjectContext context = await ProjectContext.CreateAsync(directory);
             return await AnalyzeProjectAsync(context, new[] { filePath });
         }
 
+        // Выполняет анализ проекта или набора файлов
         public async Task<List<AnalysisIssue>> AnalyzeProjectAsync(
             ProjectContext context,
             IEnumerable<string> filesToAnalyze = null,
             IProgress<int> progress = null,
             CancellationToken cancellationToken = default)
         {
-            var issues = new List<AnalysisIssue>();
-            var files = filesToAnalyze?.ToList() ?? context.SourceFiles;
-            var compilation = context.Compilation;
+            List<AnalysisIssue> issues = new List<AnalysisIssue>();
+            List<string> files = filesToAnalyze?.ToList() ?? context.SourceFiles;
+            Compilation compilation = context.Compilation;
             LastErrors.Clear();
 
             int total = files.Count;
             int processed = 0;
 
-            foreach (var filePath in files)
+            foreach (string filePath in files)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var syntaxTree = compilation.SyntaxTrees.FirstOrDefault(t => t.FilePath == filePath);
+                SyntaxTree syntaxTree = compilation.SyntaxTrees.FirstOrDefault(t => t.FilePath == filePath);
                 if (syntaxTree == null) continue;
 
-                var semanticModel = compilation.GetSemanticModel(syntaxTree);
-                var root = await syntaxTree.GetRootAsync(cancellationToken);
+                SemanticModel semanticModel = compilation.GetSemanticModel(syntaxTree);
+                SyntaxNode root = await syntaxTree.GetRootAsync(cancellationToken);
 
-                foreach (var rule in _rules)
+                foreach (IAnalyzerRule rule in _rules)
                 {
                     try
                     {
-                        var ruleIssues = await rule.AnalyzeAsync(root, semanticModel, filePath);
+                        List<AnalysisIssue> ruleIssues = await rule.AnalyzeAsync(root, semanticModel, filePath);
                         issues.AddRange(ruleIssues);
                     }
                     catch (Exception ex)
@@ -95,5 +98,6 @@ namespace StaticCodeAnalyzer.Analysis
         }
     }
 
+    // Записывает ошибку, возникшую при выполнении правила
     public record RuleError(string RuleName, string FilePath, string ErrorMessage);
 }

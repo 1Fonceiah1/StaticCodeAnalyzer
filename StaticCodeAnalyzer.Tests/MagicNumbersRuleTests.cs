@@ -2,6 +2,7 @@ using System.Threading.Tasks;
 using FluentAssertions;
 using Xunit;
 using StaticCodeAnalyzer.Analysis;
+using StaticCodeAnalyzer.Models;
 
 namespace StaticCodeAnalyzer.Tests.Analysis
 {
@@ -10,8 +11,7 @@ namespace StaticCodeAnalyzer.Tests.Analysis
         [Fact]
         public async Task AnalyzeAsync_ShouldDetectMagicNumber()
         {
-            // Arrange
-            var code = @"
+            string code = @"
                 class Test 
                 {
                     void Method() 
@@ -20,10 +20,8 @@ namespace StaticCodeAnalyzer.Tests.Analysis
                     }
                 }";
 
-            // Act
-            var issues = await TestHelpers.AnalyzeCodeAsync<MagicNumbersRule>(code);
+            List<AnalysisIssue> issues = await TestHelpers.AnalyzeCodeAsync<MagicNumbersRule>(code);
 
-            // Assert
             issues.Should().ContainSingle(i => i.Code == "MAG001");
             issues.First().Description.Should().Contain("42");
         }
@@ -31,8 +29,7 @@ namespace StaticCodeAnalyzer.Tests.Analysis
         [Fact]
         public async Task AnalyzeAsync_ShouldNotDetectAllowedNumbers()
         {
-            // Arrange
-            var code = @"
+            string code = @"
                 class Test 
                 {
                     void Method() 
@@ -45,18 +42,15 @@ namespace StaticCodeAnalyzer.Tests.Analysis
                     }
                 }";
 
-            // Act
-            var issues = await TestHelpers.AnalyzeCodeAsync<MagicNumbersRule>(code);
+            List<AnalysisIssue> issues = await TestHelpers.AnalyzeCodeAsync<MagicNumbersRule>(code);
 
-            // Assert
             issues.Should().BeEmpty();
         }
 
         [Fact]
         public async Task AnalyzeAsync_ShouldIgnoreConstDeclarations()
         {
-            // Arrange
-            var code = @"
+            string code = @"
                 class Test 
                 {
                     private const int Max = 100;
@@ -66,10 +60,8 @@ namespace StaticCodeAnalyzer.Tests.Analysis
                     }
                 }";
 
-            // Act
-            var issues = await TestHelpers.AnalyzeCodeAsync<MagicNumbersRule>(code);
+            List<AnalysisIssue> issues = await TestHelpers.AnalyzeCodeAsync<MagicNumbersRule>(code);
 
-            // Assert
             issues.Should().BeEmpty();
         }
     }

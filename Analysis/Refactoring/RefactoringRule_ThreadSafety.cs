@@ -15,15 +15,15 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 
         public async Task<Document> ApplyAsync(Document document, CancellationToken cancellationToken)
         {
-            var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
-            var editor = await DocumentEditor.CreateAsync(document, cancellationToken).ConfigureAwait(false);
+            SyntaxNode root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
+            DocumentEditor editor = await DocumentEditor.CreateAsync(document, cancellationToken).ConfigureAwait(false);
             bool changed = false;
 
-            var classes = root.DescendantNodes().OfType<ClassDeclarationSyntax>().ToList();
-            foreach (var classDecl in classes)
+            List<ClassDeclarationSyntax> classes = root.DescendantNodes().OfType<ClassDeclarationSyntax>().ToList();
+            foreach (ClassDeclarationSyntax classDecl in classes)
             {
-                // Находит изменяемые поля
-                var mutableFields = classDecl.Members
+                // Находит изменяемые поля (не readonly и не const)
+                List<VariableDeclaratorSyntax> mutableFields = classDecl.Members
                     .OfType<FieldDeclarationSyntax>()
                     .Where(f => !f.Modifiers.Any(SyntaxKind.ReadOnlyKeyword) && !f.Modifiers.Any(SyntaxKind.ConstKeyword))
                     .SelectMany(f => f.Declaration.Variables)
@@ -39,7 +39,8 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 
                 if (!hasLock)
                 {
-                    var lockField = SyntaxFactory.FieldDeclaration(
+                    // Добавляет приватное поле _lock
+                    FieldDeclarationSyntax lockField = SyntaxFactory.FieldDeclaration(
                             SyntaxFactory.VariableDeclaration(
                                 SyntaxFactory.ParseTypeName("object"),
                                 SyntaxFactory.SingletonSeparatedList(
@@ -57,13 +58,14 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                 }
 
                 // Находит публичные не-async методы, использующие изменяемые поля
-                var methods = classDecl.Members
+                List<MethodDeclarationSyntax> methods = classDecl.Members
                     .OfType<MethodDeclarationSyntax>()
                     .Where(m => m.Modifiers.Any(SyntaxKind.PublicKeyword) &&
                                m.Body != null &&
-                               !m.Modifiers.Any(SyntaxKind.AsyncKeyword));
+                               !m.Modifiers.Any(SyntaxKind.AsyncKeyword))
+                    .ToList();
 
-                foreach (var method in methods)
+                foreach (MethodDeclarationSyntax method in methods)
                 {
                     bool usesMutable = method.DescendantNodes()
                         .OfType<IdentifierNameSyntax>()
@@ -71,12 +73,13 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 
                     if (usesMutable && !IsAlreadyLocked(method))
                     {
-                        var newBody = SyntaxFactory.Block(
+                        // Оборачивает тело метода в lock(_lock)
+                        BlockSyntax newBody = SyntaxFactory.Block(
                             SyntaxFactory.LockStatement(
                                 SyntaxFactory.IdentifierName("_lock"),
                                 method.Body));
 
-                        var newMethod = method.WithBody(newBody);
+                        MethodDeclarationSyntax newMethod = method.WithBody(newBody);
                         editor.ReplaceNode(method, newMethod);
                         changed = true;
                     }
@@ -86,17 +89,18 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             return changed ? editor.GetChangedDocument() : document;
         }
 
+        // Проверяет, содержит ли метод уже механизмы синхронизации (lock или Monitor)
         private bool IsAlreadyLocked(MethodDeclarationSyntax method)
         {
             if (method.Body == null) return false;
 
-            // Проверяем наличие любого lock-оператора в теле
-            var lockNodes = method.Body.DescendantNodes().OfType<LockStatementSyntax>();
+            // Проверяет наличие lock-оператора
+            IEnumerable<LockStatementSyntax> lockNodes = method.Body.DescendantNodes().OfType<LockStatementSyntax>();
             if (lockNodes.Any())
                 return true;
 
-            // Проверяем вызовы Monitor.Enter и подобные
-            var monitorCalls = method.Body.DescendantNodes().OfType<InvocationExpressionSyntax>()
+            // Проверяет вызовы Monitor.Enter и подобные
+            IEnumerable<InvocationExpressionSyntax> monitorCalls = method.Body.DescendantNodes().OfType<InvocationExpressionSyntax>()
                 .Where(inv => inv.Expression is MemberAccessExpressionSyntax ma &&
                               ma.Expression.ToString() == "Monitor" &&
                               (ma.Name.Identifier.Text == "Enter" || ma.Name.Identifier.Text == "TryEnter"));

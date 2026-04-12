@@ -5,13 +5,14 @@ using StaticCodeAnalyzer.Analysis.Refactoring;
 
 namespace StaticCodeAnalyzer.Tests.Refactoring
 {
+    // Тесты для правила рефакторинга RefactoringRule_EmptyCatchBlock
     public class RefactoringRule_EmptyCatchBlockTests
     {
         [Fact]
         public async Task ApplyAsync_ShouldAddCommentAndThrowToEmptyCatch()
         {
-            // Arrange
-            var input = @"
+            // Подготавливает код с пустым блоком catch
+            string input = @"
                 class Test 
                 {
                     void Method() 
@@ -26,10 +27,10 @@ namespace StaticCodeAnalyzer.Tests.Refactoring
                     }
                 }";
 
-            // Act
-            var result = await TestHelpers.ApplyRefactoringAsync<RefactoringRule_EmptyCatchBlock>(input);
+            // Применяет рефакторинг
+            string result = await TestHelpers.ApplyRefactoringAsync<RefactoringRule_EmptyCatchBlock>(input);
 
-            // Assert
+            // Проверяет, что добавлен комментарий TODO и оператор throw
             result.Should().Contain("// TODO:");
             result.Should().Contain("throw;");
             result.Should().NotContain("catch (Exception)\n        {\n        }");

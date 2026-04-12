@@ -4,14 +4,17 @@ using System.Runtime.CompilerServices;
 
 namespace StaticCodeAnalyzer.Models
 {
+    // Модель узла дерева файлов для отображения в интерфейсе
     public class FileTreeNode : INotifyPropertyChanged
     {
         private bool _isExcluded;
-        public string Name { get; set; }
-        public string FullPath { get; set; }
-        public bool IsFolder { get; set; }
-        public List<FileTreeNode> Children { get; set; }
 
+        public string Name { get; set; }               // Имя файла или папки
+        public string FullPath { get; set; }           // Полный путь
+        public bool IsFolder { get; set; }             // Является ли папкой
+        public List<FileTreeNode> Children { get; set; } // Дочерние узлы
+
+        // Флаг исключения из анализа (синхронизируется с дочерними элементами)
         public bool IsExcluded
         {
             get => _isExcluded;
@@ -21,10 +24,9 @@ namespace StaticCodeAnalyzer.Models
                 {
                     _isExcluded = value;
                     OnPropertyChanged();
-                    // Если это папка, синхронизируем с дочерними
                     if (IsFolder && Children != null)
                     {
-                        foreach (var child in Children)
+                        foreach (FileTreeNode child in Children)
                         {
                             child.IsExcluded = value;
                         }

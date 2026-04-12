@@ -7,12 +7,13 @@ using StaticCodeAnalyzer.Models;
 
 namespace StaticCodeAnalyzer.Analysis
 {
+    // Находит методы с идентичными телами
     public class CodeDuplicationRule : IAnalyzerRule
     {
         public Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
         {
-            var issues = new List<AnalysisIssue>();
-            var methods = root.DescendantNodes()
+            List<AnalysisIssue> issues = new List<AnalysisIssue>();
+            List<MethodDeclarationSyntax> methods = root.DescendantNodes()
                 .OfType<MethodDeclarationSyntax>()
                 .Where(m => m.Body != null)
                 .ToList();
@@ -23,11 +24,11 @@ namespace StaticCodeAnalyzer.Analysis
                 {
                     if (AreBodiesEquivalent(methods[i].Body, methods[j].Body))
                     {
-                        var location = methods[i].Identifier.GetLocation();
+                        Microsoft.CodeAnalysis.Location? location = methods[i].Identifier.GetLocation();
                         if (location != null)
                         {
-                            var lineSpan = location.GetLineSpan();
-                            var containingClass = methods[i].FirstAncestorOrSelf<ClassDeclarationSyntax>();
+                            FileLinePositionSpan lineSpan = location.GetLineSpan();
+                            ClassDeclarationSyntax? containingClass = methods[i].FirstAncestorOrSelf<ClassDeclarationSyntax>();
                             issues.Add(new AnalysisIssue
                             {
                                 Severity = "Средний",
@@ -50,6 +51,7 @@ namespace StaticCodeAnalyzer.Analysis
             return Task.FromResult(issues);
         }
 
+        // Сравнивает два блока кода на идентичность
         private bool AreBodiesEquivalent(BlockSyntax? body1, BlockSyntax? body2)
         {
             if (body1 == null && body2 == null) return true;

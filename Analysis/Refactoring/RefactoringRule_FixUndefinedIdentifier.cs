@@ -13,7 +13,8 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
     {
         public IEnumerable<string> TargetIssueCodes => new[] { "UND001" };
 
-        private static readonly Dictionary<string, (string Value, string Type)> CommonConstants = new()
+        // Содержит предопределённые константы для часто встречающихся неопределённых идентификаторов
+        private static readonly Dictionary<string, (string Value, string Type)> CommonConstants = new Dictionary<string, (string, string)>()
         {
             { "max", ("100", "int") },
             { "limit", ("50", "int") },
@@ -27,13 +28,13 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 
         public async Task<Document> ApplyAsync(Document document, CancellationToken cancellationToken)
         {
-            var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
-            var semanticModel = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
-            var editor = await DocumentEditor.CreateAsync(document, cancellationToken).ConfigureAwait(false);
+            SyntaxNode root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
+            SemanticModel semanticModel = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
+            DocumentEditor editor = await DocumentEditor.CreateAsync(document, cancellationToken).ConfigureAwait(false);
             bool changed = false;
 
-            // Находим все идентификаторы, которые не являются частью обращения к члену и не разрешены
-            var undefinedIdentifiers = root.DescendantNodes()
+            // Выявляет неразрешённые идентификаторы, не являющиеся частью обращения к члену или using-директивы
+            List<IGrouping<string, IdentifierNameSyntax>> undefinedIdentifiers = root.DescendantNodes()
                 .OfType<IdentifierNameSyntax>()
                 .Where(id => !(id.Parent is MemberAccessExpressionSyntax) &&
                              !(id.Parent is QualifiedNameSyntax) &&
@@ -42,29 +43,30 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                 .GroupBy(id => id.Identifier.Text)
                 .ToList();
 
-            foreach (var group in undefinedIdentifiers)
+            foreach (IGrouping<string, IdentifierNameSyntax> group in undefinedIdentifiers)
             {
-                var name = group.Key;
-                var firstOccurrence = group.First();
+                string name = group.Key;
+                IdentifierNameSyntax firstOccurrence = group.First();
                 
-                // Ищет содержащий класс
-                var classDecl = firstOccurrence.FirstAncestorOrSelf<ClassDeclarationSyntax>();
+                // Определяет класс, содержащий неопределённый идентификатор
+                ClassDeclarationSyntax? classDecl = firstOccurrence.FirstAncestorOrSelf<ClassDeclarationSyntax>();
                 if (classDecl == null) continue;
 
-                // Проверяет, не объявлена ли уже константа с таким именем в этом классе
-                var existingMembers = classDecl.Members
+                // Проверяет, не объявлена ли уже константа с таким именем
+                HashSet<string> existingMembers = classDecl.Members
                     .OfType<FieldDeclarationSyntax>()
                     .SelectMany(f => f.Declaration.Variables)
-                    .Select(v => v.Identifier.Text);
+                    .Select(v => v.Identifier.Text)
+                    .ToHashSet();
                 
                 if (existingMembers.Contains(name)) continue;
 
-                // Проверяет, есть ли предопределённое значение для этого имени
-                if (!CommonConstants.TryGetValue(name.ToLowerInvariant(), out var constantInfo)) continue;
+                // Ищет предопределённое значение для данного имени
+                if (!CommonConstants.TryGetValue(name.ToLowerInvariant(), out (string Value, string Type) constantInfo)) continue;
 
-                var (value, typeName) = constantInfo;
+                (string value, string typeName) = constantInfo;
 
-                // Генерирует литерал правильного типа
+                // Создаёт литеральное выражение в зависимости от типа
                 ExpressionSyntax literalValue = typeName switch
                 {
                     "int" => SyntaxFactory.LiteralExpression(SyntaxKind.NumericLiteralExpression, SyntaxFactory.Literal(int.Parse(value))),
@@ -75,8 +77,8 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                     _ => SyntaxFactory.LiteralExpression(SyntaxKind.NumericLiteralExpression, SyntaxFactory.Literal(int.Parse(value)))
                 };
 
-                // Создаёт приватную константу
-                var constField = SyntaxFactory.FieldDeclaration(
+                // Формирует приватную константу
+                FieldDeclarationSyntax constField = SyntaxFactory.FieldDeclaration(
                         SyntaxFactory.VariableDeclaration(
                             SyntaxFactory.ParseTypeName(typeName),
                             SyntaxFactory.SingletonSeparatedList(

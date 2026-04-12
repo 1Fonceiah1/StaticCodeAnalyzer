@@ -8,19 +8,25 @@ using StaticCodeAnalyzer.Models;
 
 namespace StaticCodeAnalyzer.Analysis
 {
+    // Предупреждает о классах с изменяемыми полями, которые реально изменяются, но не имеют синхронизации
     public class ThreadSafetyRule : IAnalyzerRule
     {
         public Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
         {
-            var issues = new List<AnalysisIssue>();
-            var classes = root.DescendantNodes().OfType<ClassDeclarationSyntax>();
+            List<AnalysisIssue> issues = new List<AnalysisIssue>();
+            IEnumerable<ClassDeclarationSyntax> classes = root.DescendantNodes().OfType<ClassDeclarationSyntax>();
 
-            foreach (var classDecl in classes)
+            foreach (ClassDeclarationSyntax classDecl in classes)
             {
-                var mutableFields = classDecl.Members
+                // Собирает изменяемые поля (не readonly и не const)
+                List<VariableDeclaratorSyntax> mutableFields = classDecl.Members
                     .OfType<FieldDeclarationSyntax>()
                     .Where(f => !f.Modifiers.Any(SyntaxKind.ReadOnlyKeyword) && !f.Modifiers.Any(SyntaxKind.ConstKeyword))
                     .SelectMany(f => f.Declaration.Variables)
+                    .ToList();
+
+                // Преобразует в список с символами
+                var mutableFieldsWithSymbols = mutableFields
                     .Select(v => new
                     {
                         Syntax = v,
@@ -29,12 +35,13 @@ namespace StaticCodeAnalyzer.Analysis
                     .Where(x => x.Symbol != null)
                     .ToList();
 
-                if (!mutableFields.Any()) continue;
+                if (!mutableFieldsWithSymbols.Any()) continue;
 
+                // Проверяет, действительно ли поля изменяются после конструктора
                 bool anyFieldMutated = false;
-                foreach (var field in mutableFields)
+                foreach (var field in mutableFieldsWithSymbols)
                 {
-                    if (IsFieldWrittenAfterConstructor(classDecl, field.Symbol, semanticModel))
+                    if (IsFieldWrittenAfterConstructor(classDecl, field.Symbol!, semanticModel))
                     {
                         anyFieldMutated = true;
                         break;
@@ -43,15 +50,16 @@ namespace StaticCodeAnalyzer.Analysis
 
                 if (!anyFieldMutated) continue;
 
+                // Проверяет наличие синхронизации
                 bool hasLock = classDecl.DescendantNodes().OfType<LockStatementSyntax>().Any();
-                bool hasThreadSafeTypes = mutableFields.Any(f => IsThreadSafeType(f.Symbol.Type.ToDisplayString()));
+                bool hasThreadSafeTypes = mutableFieldsWithSymbols.Any(f => IsThreadSafeType(f.Symbol!.Type.ToDisplayString()));
 
                 if (!hasLock && !hasThreadSafeTypes)
                 {
-                    var location = classDecl.Identifier.GetLocation();
+                    Microsoft.CodeAnalysis.Location? location = classDecl.Identifier.GetLocation();
                     if (location != null)
                     {
-                        var lineSpan = location.GetLineSpan();
+                        FileLinePositionSpan lineSpan = location.GetLineSpan();
                         issues.Add(new AnalysisIssue
                         {
                             Severity = "Высокий",
@@ -73,10 +81,11 @@ namespace StaticCodeAnalyzer.Analysis
             return Task.FromResult(issues);
         }
 
+        // Определяет, изменяется ли поле после конструктора
         private bool IsFieldWrittenAfterConstructor(ClassDeclarationSyntax classDecl, IFieldSymbol field, SemanticModel model)
         {
-            var members = classDecl.Members;
-            foreach (var member in members)
+            IEnumerable<MemberDeclarationSyntax> members = classDecl.Members;
+            foreach (MemberDeclarationSyntax member in members)
             {
                 if (member is ConstructorDeclarationSyntax) continue;
                 if (member is MethodDeclarationSyntax method && method.Body != null)
@@ -85,7 +94,7 @@ namespace StaticCodeAnalyzer.Analysis
                 }
                 if (member is PropertyDeclarationSyntax prop && prop.AccessorList != null)
                 {
-                    foreach (var accessor in prop.AccessorList.Accessors)
+                    foreach (AccessorDeclarationSyntax accessor in prop.AccessorList.Accessors)
                     {
                         if (accessor.Body != null && MethodWritesField(accessor.Body, field, model))
                             return true;
@@ -95,32 +104,33 @@ namespace StaticCodeAnalyzer.Analysis
             return false;
         }
 
+        // Проверяет, записывает ли метод в поле
         private bool MethodWritesField(MethodDeclarationSyntax method, IFieldSymbol field, SemanticModel model)
         {
-            return MethodWritesField(method.Body, field, model);
+            return MethodWritesField(method.Body!, field, model);
         }
 
         private bool MethodWritesField(BlockSyntax body, IFieldSymbol field, SemanticModel model)
         {
-            var assignments = body.DescendantNodes()
+            IEnumerable<AssignmentExpressionSyntax> assignments = body.DescendantNodes()
                 .OfType<AssignmentExpressionSyntax>()
                 .Where(a => a.IsKind(SyntaxKind.SimpleAssignmentExpression) ||
                             a.IsKind(SyntaxKind.AddAssignmentExpression) ||
                             a.IsKind(SyntaxKind.SubtractAssignmentExpression) ||
                             a.IsKind(SyntaxKind.MultiplyAssignmentExpression));
 
-            foreach (var assign in assignments)
+            foreach (AssignmentExpressionSyntax assign in assignments)
             {
-                var left = assign.Left;
+                ExpressionSyntax left = assign.Left;
                 if (left is IdentifierNameSyntax id)
                 {
-                    var symbol = model.GetSymbolInfo(id).Symbol;
+                    ISymbol? symbol = model.GetSymbolInfo(id).Symbol;
                     if (SymbolEqualityComparer.Default.Equals(symbol, field))
                         return true;
                 }
                 if (left is MemberAccessExpressionSyntax member && member.Expression is ThisExpressionSyntax)
                 {
-                    var symbol = model.GetSymbolInfo(member).Symbol;
+                    ISymbol? symbol = model.GetSymbolInfo(member).Symbol;
                     if (SymbolEqualityComparer.Default.Equals(symbol, field))
                         return true;
                 }
@@ -128,10 +138,11 @@ namespace StaticCodeAnalyzer.Analysis
             return false;
         }
 
+        // Проверяет, является ли тип потокобезопасным (упрощённо)
         private bool IsThreadSafeType(string typeName)
         {
-            var safeTypes = new[] { "string", "int", "long", "bool", "decimal", "DateTime", 
-                                   "ConcurrentDictionary", "ConcurrentQueue", "ImmutableArray", "ImmutableList" };
+            string[] safeTypes = new[] { "string", "int", "long", "bool", "decimal", "DateTime", 
+                                       "ConcurrentDictionary", "ConcurrentQueue", "ImmutableArray", "ImmutableList" };
             return safeTypes.Any(t => typeName.Contains(t));
         }
     }

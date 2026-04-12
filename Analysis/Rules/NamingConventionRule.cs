@@ -8,23 +8,25 @@ using StaticCodeAnalyzer.Models;
 
 namespace StaticCodeAnalyzer.Analysis
 {
+    // Проверяет соглашения об именовании: методы в PascalCase, приватные поля в _camelCase
     public class NamingConventionRule : IAnalyzerRule
     {
         public Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
         {
-            var issues = new List<AnalysisIssue>();
+            List<AnalysisIssue> issues = new List<AnalysisIssue>();
 
-            var methods = root.DescendantNodes().OfType<MethodDeclarationSyntax>();
-            foreach (var method in methods)
+            // Проверяет методы
+            IEnumerable<MethodDeclarationSyntax> methods = root.DescendantNodes().OfType<MethodDeclarationSyntax>();
+            foreach (MethodDeclarationSyntax method in methods)
             {
-                var name = method.Identifier.Text;
+                string name = method.Identifier.Text;
                 if (!string.IsNullOrEmpty(name) && !IsPascalCase(name))
                 {
-                    var location = method.Identifier.GetLocation();
+                    Microsoft.CodeAnalysis.Location? location = method.Identifier.GetLocation();
                     if (location != null)
                     {
-                        var lineSpan = location.GetLineSpan();
-                        var containingClass = method.FirstAncestorOrSelf<ClassDeclarationSyntax>();
+                        FileLinePositionSpan lineSpan = location.GetLineSpan();
+                        ClassDeclarationSyntax? containingClass = method.FirstAncestorOrSelf<ClassDeclarationSyntax>();
                         issues.Add(new AnalysisIssue
                         {
                             Severity = "Средний",
@@ -43,20 +45,21 @@ namespace StaticCodeAnalyzer.Analysis
                 }
             }
 
-            var fields = root.DescendantNodes().OfType<FieldDeclarationSyntax>()
+            // Проверяет приватные поля
+            IEnumerable<FieldDeclarationSyntax> fields = root.DescendantNodes().OfType<FieldDeclarationSyntax>()
                 .Where(f => f.Modifiers.Any(SyntaxKind.PrivateKeyword) && !f.Modifiers.Any(SyntaxKind.ConstKeyword));
-            foreach (var field in fields)
+            foreach (FieldDeclarationSyntax field in fields)
             {
-                foreach (var variable in field.Declaration.Variables)
+                foreach (VariableDeclaratorSyntax variable in field.Declaration.Variables)
                 {
-                    var name = variable.Identifier.Text;
+                    string name = variable.Identifier.Text;
                     if (!string.IsNullOrEmpty(name) && !IsPrivateFieldConvention(name))
                     {
-                        var location = variable.Identifier.GetLocation();
+                        Microsoft.CodeAnalysis.Location? location = variable.Identifier.GetLocation();
                         if (location != null)
                         {
-                            var lineSpan = location.GetLineSpan();
-                            var containingClass = field.FirstAncestorOrSelf<ClassDeclarationSyntax>();
+                            FileLinePositionSpan lineSpan = location.GetLineSpan();
+                            ClassDeclarationSyntax? containingClass = field.FirstAncestorOrSelf<ClassDeclarationSyntax>();
                             issues.Add(new AnalysisIssue
                             {
                                 Severity = "Средний",
@@ -79,9 +82,16 @@ namespace StaticCodeAnalyzer.Analysis
             return Task.FromResult(issues);
         }
 
+        // Проверяет, соответствует ли имя соглашению PascalCase
         private bool IsPascalCase(string name) => !string.IsNullOrEmpty(name) && char.IsUpper(name[0]) && !name.Contains('_');
+        
+        // Преобразует имя в PascalCase
         private string ToPascalCase(string name) => string.IsNullOrEmpty(name) ? name : char.ToUpperInvariant(name[0]) + name.Substring(1);
+        
+        // Проверяет соглашение для приватных полей: начинается с "_" и далее строчная буква
         private bool IsPrivateFieldConvention(string name) => name.StartsWith("_") && name.Length > 1 && char.IsLower(name[1]);
+        
+        // Преобразует имя в camelCase
         private string ToCamelCase(string name) => string.IsNullOrEmpty(name) ? name : char.ToLowerInvariant(name[0]) + (name.Length > 1 ? name.Substring(1) : "");
     }
 }

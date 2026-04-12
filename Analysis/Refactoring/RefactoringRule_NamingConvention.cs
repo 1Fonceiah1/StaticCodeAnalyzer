@@ -14,25 +14,26 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 
         public async Task<Document> ApplyAsync(Document document, CancellationToken cancellationToken)
         {
-            var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
-            var semanticModel = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
-            var solution = document.Project.Solution;
+            SyntaxNode root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
+            SemanticModel semanticModel = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
+            Solution solution = document.Project.Solution;
             bool changed = false;
 
-            // Переименование методов в PascalCase
-            var methods = root.DescendantNodes().OfType<MethodDeclarationSyntax>();
-            foreach (var method in methods)
+            // Переименовывает методы в PascalCase
+            List<MethodDeclarationSyntax> methods = root.DescendantNodes().OfType<MethodDeclarationSyntax>().ToList();
+            foreach (MethodDeclarationSyntax method in methods)
             {
-                var symbol = semanticModel.GetDeclaredSymbol(method, cancellationToken);
+                IMethodSymbol? symbol = semanticModel.GetDeclaredSymbol(method, cancellationToken);
                 if (symbol == null) continue;
                 
+                // Пропускает переопределённые методы и явные реализации интерфейсов
                 if (symbol.IsOverride || symbol.ExplicitInterfaceImplementations.Any()) continue;
                 
                 string current = symbol.Name;
                 if (!IsPascalCase(current))
                 {
                     string target = ToPascalCase(current);
-                    var containingType = method.FirstAncestorOrSelf<TypeDeclarationSyntax>();
+                    TypeDeclarationSyntax? containingType = method.FirstAncestorOrSelf<TypeDeclarationSyntax>();
                     if (containingType != null && HasNameConflict(target, containingType, semanticModel, cancellationToken))
                         continue;
                     
@@ -41,21 +42,22 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                 }
             }
 
-            // Переименование приватных полей в _camelCase
-            var fields = root.DescendantNodes().OfType<FieldDeclarationSyntax>()
+            // Переименовывает приватные поля в _camelCase
+            List<VariableDeclaratorSyntax> fields = root.DescendantNodes().OfType<FieldDeclarationSyntax>()
                 .Where(f => f.Modifiers.Any(m => m.IsKind(SyntaxKind.PrivateKeyword)) && !f.Modifiers.Any(m => m.IsKind(SyntaxKind.ConstKeyword)))
-                .SelectMany(f => f.Declaration.Variables);
+                .SelectMany(f => f.Declaration.Variables)
+                .ToList();
 
-            foreach (var varDecl in fields)
+            foreach (VariableDeclaratorSyntax varDecl in fields)
             {
-                var symbol = semanticModel.GetDeclaredSymbol(varDecl, cancellationToken);
+                ISymbol? symbol = semanticModel.GetDeclaredSymbol(varDecl, cancellationToken);
                 if (symbol == null) continue;
 
                 string current = symbol.Name;
                 if (!IsPrivateFieldConvention(current))
                 {
                     string target = ToPrivateFieldConvention(current);
-                    var containingType = varDecl.FirstAncestorOrSelf<TypeDeclarationSyntax>();
+                    TypeDeclarationSyntax? containingType = varDecl.FirstAncestorOrSelf<TypeDeclarationSyntax>();
                     if (containingType != null && HasNameConflict(target, containingType, semanticModel, cancellationToken))
                         continue;
                     
@@ -67,11 +69,19 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             return changed ? solution.GetDocument(document.Id) : document;
         }
 
+        // Проверяет, соответствует ли имя соглашению PascalCase
         private bool IsPascalCase(string n) => n.Length > 0 && char.IsUpper(n[0]) && !n.Contains('_');
+        
+        // Преобразует имя в PascalCase
         private string ToPascalCase(string n) => char.ToUpperInvariant(n[0]) + (n.Length > 1 ? n.Substring(1) : "");
+        
+        // Проверяет соглашение для приватных полей: начинается с "_" и далее строчная буква
         private bool IsPrivateFieldConvention(string n) => n.StartsWith("_") && n.Length > 1 && char.IsLower(n[1]);
+        
+        // Преобразует имя в формат _camelCase
         private string ToPrivateFieldConvention(string n) => n.StartsWith("_") ? n : "_" + char.ToLowerInvariant(n[0]) + (n.Length > 1 ? n.Substring(1) : "");
         
+        // Проверяет, существует ли уже член с заданным именем в типе
         private bool HasNameConflict(string newName, TypeDeclarationSyntax typeDecl, SemanticModel model, CancellationToken ct)
         {
             return typeDecl.Members

@@ -5,13 +5,14 @@ using StaticCodeAnalyzer.Analysis.Refactoring;
 
 namespace StaticCodeAnalyzer.Tests.Refactoring
 {
+    // Тесты для правила рефакторинга RefactoringRule_MagicNumbers
     public class RefactoringRule_MagicNumbersTests
     {
         [Fact]
         public async Task ApplyAsync_ShouldReplaceMagicNumberWithConst()
         {
-            // Arrange
-            var input = @"
+            // Подготавливает код с повторяющимся магическим числом 42
+            string input = @"
                 class Test 
                 {
                     void Method() 
@@ -21,24 +22,22 @@ namespace StaticCodeAnalyzer.Tests.Refactoring
                     }
                 }";
 
-            // Act
-            var result = await TestHelpers.ApplyRefactoringAsync<RefactoringRule_MagicNumbers>(input);
+            // Применяет рефакторинг
+            string result = await TestHelpers.ApplyRefactoringAsync<RefactoringRule_MagicNumbers>(input);
 
-            // Assert
+            // Проверяет, что создана приватная константа и оба использования заменены
             result.Should().Contain("private const int");
             result.Should().Contain("Const_42");
-            // Проверяет, что использования заменены на имя константы
             result.Should().Contain("int x = Const_42;");
             result.Should().Contain("int y = Const_42;");
-            // Проверяет, что константа инициализируется исходным значением
             result.Should().Contain("Const_42 = 42;");
         }
 
         [Fact]
         public async Task ApplyAsync_ShouldDetectCorrectTypeForDouble()
         {
-            // Arrange
-            var input = @"
+            // Подготавливает код с числом с плавающей точкой
+            string input = @"
                 class Test 
                 {
                     void Method() 
@@ -47,10 +46,10 @@ namespace StaticCodeAnalyzer.Tests.Refactoring
                     }
                 }";
 
-            // Act
-            var result = await TestHelpers.ApplyRefactoringAsync<RefactoringRule_MagicNumbers>(input);
+            // Применяет рефакторинг
+            string result = await TestHelpers.ApplyRefactoringAsync<RefactoringRule_MagicNumbers>(input);
 
-            // Assert
+            // Проверяет, что создана константа типа double
             result.Should().Contain("private const double");
             result.Should().Contain("Const_3_14");
             result.Should().Contain("= 3.14");
@@ -59,8 +58,8 @@ namespace StaticCodeAnalyzer.Tests.Refactoring
         [Fact]
         public async Task ApplyAsync_ShouldNotReplaceAllowedNumbers()
         {
-            // Arrange
-            var input = @"
+            // Подготавливает код с разрешёнными числами 0 и 1
+            string input = @"
                 class Test 
                 {
                     void Method() 
@@ -70,10 +69,10 @@ namespace StaticCodeAnalyzer.Tests.Refactoring
                     }
                 }";
 
-            // Act
-            var result = await TestHelpers.ApplyRefactoringAsync<RefactoringRule_MagicNumbers>(input);
+            // Применяет рефакторинг
+            string result = await TestHelpers.ApplyRefactoringAsync<RefactoringRule_MagicNumbers>(input);
 
-            // Assert
+            // Проверяет, что константы не создавались
             result.Should().NotContain("private const");
             result.Should().Contain("= 0;");
             result.Should().Contain("= 1;");

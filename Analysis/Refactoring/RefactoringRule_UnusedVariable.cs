@@ -16,31 +16,34 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 
         public async Task<Document> ApplyAsync(Document document, CancellationToken cancellationToken)
         {
-            var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
-            var semanticModel = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
-            var editor = await DocumentEditor.CreateAsync(document, cancellationToken).ConfigureAwait(false);
+            SyntaxNode root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
+            SemanticModel semanticModel = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
+            DocumentEditor editor = await DocumentEditor.CreateAsync(document, cancellationToken).ConfigureAwait(false);
             bool changed = false;
 
-            var localVars = root.DescendantNodes()
+            // Находит все объявления локальных переменных
+            List<VariableDeclaratorSyntax> localVars = root.DescendantNodes()
                 .OfType<VariableDeclaratorSyntax>()
                 .Where(v => v.Parent is VariableDeclarationSyntax decl && decl.Parent is LocalDeclarationStatementSyntax)
                 .ToList();
 
-            foreach (var variable in localVars)
+            foreach (VariableDeclaratorSyntax variable in localVars)
             {
-                var symbol = semanticModel.GetDeclaredSymbol(variable, cancellationToken);
+                ISymbol? symbol = semanticModel.GetDeclaredSymbol(variable, cancellationToken);
                 if (symbol == null) continue;
 
-                var references = await SymbolFinder.FindReferencesAsync(symbol, document.Project.Solution, cancellationToken).ConfigureAwait(false);
+                // Ищет все ссылки на символ переменной
+                IEnumerable<ReferencedSymbol> references = await SymbolFinder.FindReferencesAsync(symbol, document.Project.Solution, cancellationToken).ConfigureAwait(false);
                 
                 int usageCount = references
                     .SelectMany(r => r.Locations)
                     .Count(loc => !loc.IsImplicit && loc.Location.SourceTree == root.SyntaxTree);
 
+                // Удаляет переменную, если она не используется
                 if (usageCount == 0)
                 {
-                    var declaration = variable.Parent as VariableDeclarationSyntax;
-                    var statement = declaration?.Parent as LocalDeclarationStatementSyntax;
+                    VariableDeclarationSyntax? declaration = variable.Parent as VariableDeclarationSyntax;
+                    LocalDeclarationStatementSyntax? statement = declaration?.Parent as LocalDeclarationStatementSyntax;
                     if (statement == null) continue;
 
                     if (declaration.Variables.Count == 1)
@@ -50,14 +53,15 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                     }
                     else
                     {
-                        var newVariables = declaration.Variables.Where(v => v != variable).ToArray();
-                        if (newVariables.Length == 0)
+                        // Удаляет только конкретную переменную из объявления нескольких переменных
+                        List<VariableDeclaratorSyntax> newVariables = declaration.Variables.Where(v => v != variable).ToList();
+                        if (newVariables.Count == 0)
                         {
                             editor.RemoveNode(statement);
                         }
                         else
                         {
-                            var newDeclaration = declaration.WithVariables(SyntaxFactory.SeparatedList(newVariables));
+                            VariableDeclarationSyntax newDeclaration = declaration.WithVariables(SyntaxFactory.SeparatedList(newVariables));
                             editor.ReplaceNode(declaration, newDeclaration);
                         }
                         changed = true;

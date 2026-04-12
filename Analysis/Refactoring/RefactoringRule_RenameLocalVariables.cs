@@ -12,7 +12,8 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
     {
         public IEnumerable<string> TargetIssueCodes => new[] { "NAM003", "REN001" };
 
-        private static readonly HashSet<string> PoorNames = new()
+        // Список неинформативных имён переменных
+        private static readonly HashSet<string> PoorNames = new HashSet<string>()
         {
             "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m",
             "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z",
@@ -21,42 +22,44 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 
         public async Task<Document> ApplyAsync(Document document, CancellationToken cancellationToken)
         {
-            var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
-            var semanticModel = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
-            var solution = document.Project.Solution;
+            SyntaxNode root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
+            SemanticModel semanticModel = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
+            Solution solution = document.Project.Solution;
             bool changed = false;
 
-            // Сначала собираем все переменные, которые требуют переименования
-            var localVars = root.DescendantNodes()
+            // Собирает все локальные переменные с неудачными именами
+            List<VariableDeclaratorSyntax> localVars = root.DescendantNodes()
                 .OfType<VariableDeclaratorSyntax>()
                 .Where(v => v.Parent is VariableDeclarationSyntax decl && decl.Parent is LocalDeclarationStatementSyntax)
-                .Select(v => new { Syntax = v, Symbol = semanticModel.GetDeclaredSymbol(v, cancellationToken) })
+                .ToList();
+
+            // Фильтрует по неинформативным именам
+            List<(VariableDeclaratorSyntax Syntax, ISymbol Symbol)> poorVars = localVars
+                .Select(v => (Syntax: v, Symbol: semanticModel.GetDeclaredSymbol(v, cancellationToken)))
                 .Where(x => x.Symbol != null && PoorNames.Contains(x.Symbol.Name))
                 .ToList();
 
-            // Группируем по методу, чтобы обрабатывать каждый метод отдельно
-            var methodGroups = localVars.GroupBy(x => x.Syntax.FirstAncestorOrSelf<MethodDeclarationSyntax>());
+            // Группирует по методу для обработки каждого метода отдельно
+            var methodGroups = poorVars.GroupBy(x => x.Syntax.FirstAncestorOrSelf<MethodDeclarationSyntax>());
 
             foreach (var group in methodGroups)
             {
-                var method = group.Key;
+                MethodDeclarationSyntax? method = group.Key;
                 if (method == null) continue;
 
-                // Собираем все имена, которые уже заняты в этом методе (параметры + локальные переменные)
-                var usedNames = new HashSet<string>();
-                // Параметры метода
-                foreach (var p in method.ParameterList.Parameters)
+                // Собирает все занятые имена в этом методе (параметры + локальные переменные)
+                HashSet<string> usedNames = new HashSet<string>();
+                foreach (ParameterSyntax p in method.ParameterList.Parameters)
                     usedNames.Add(p.Identifier.Text);
-                // Все локальные переменные (включая те, которые не будем переименовывать)
-                foreach (var v in method.DescendantNodes().OfType<VariableDeclaratorSyntax>())
+                foreach (VariableDeclaratorSyntax v in method.DescendantNodes().OfType<VariableDeclaratorSyntax>())
                 {
-                    var sym = semanticModel.GetDeclaredSymbol(v, cancellationToken);
+                    ISymbol? sym = semanticModel.GetDeclaredSymbol(v, cancellationToken);
                     if (sym != null)
                         usedNames.Add(sym.Name);
                 }
 
-                // Для каждой переменной в группе генерируем уникальное имя
-                var renameMap = new Dictionary<ISymbol, string>();
+                // Создаёт карту переименований для переменных в группе
+                Dictionary<ISymbol, string> renameMap = new Dictionary<ISymbol, string>();
                 foreach (var item in group)
                 {
                     string suggested = SuggestBetterName(item.Syntax, semanticModel, cancellationToken);
@@ -70,11 +73,11 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                         counter++;
                     }
                     renameMap[item.Symbol] = unique;
-                    usedNames.Add(unique); // резервируем имя для следующих переменных
+                    usedNames.Add(unique);
                 }
 
-                // Применяем переименования
-                foreach (var kv in renameMap)
+                // Применяет переименования
+                foreach (KeyValuePair<ISymbol, string> kv in renameMap)
                 {
                     solution = await Renamer.RenameSymbolAsync(solution, kv.Key, new SymbolRenameOptions(), kv.Value, cancellationToken);
                     changed = true;
@@ -84,17 +87,18 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             return changed ? solution.GetDocument(document.Id) : document;
         }
 
+        // Предлагает осмысленное имя на основе контекста переменной
         private string SuggestBetterName(VariableDeclaratorSyntax variable, SemanticModel model, CancellationToken ct)
         {
             string name = variable.Identifier.Text;
-            var declaration = variable.Parent as VariableDeclarationSyntax;
-            var typeSyntax = declaration?.Type;
+            VariableDeclarationSyntax? declaration = variable.Parent as VariableDeclarationSyntax;
+            TypeSyntax? typeSyntax = declaration?.Type;
 
-            // Счётчик цикла for
+            // Для счётчика цикла for
             if (declaration?.Parent is ForStatementSyntax)
                 return "index";
 
-            // Итератор foreach
+            // Для итератора foreach
             if (declaration?.Parent is ForEachStatementSyntax)
                 return "item";
 
@@ -106,19 +110,19 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             if (name == "len")
                 return "length";
 
-            // По типу
+            // По типу переменной
             if (typeSyntax != null)
             {
-                var typeInfo = model.GetTypeInfo(typeSyntax, ct);
-                var type = typeInfo.Type;
+                TypeInfo typeInfo = model.GetTypeInfo(typeSyntax, ct);
+                ITypeSymbol? type = typeInfo.Type;
                 if (type != null)
                 {
-                    if (type.SpecialType == Microsoft.CodeAnalysis.SpecialType.System_Int32 ||
-                        type.SpecialType == Microsoft.CodeAnalysis.SpecialType.System_Int64)
+                    if (type.SpecialType == SpecialType.System_Int32 ||
+                        type.SpecialType == SpecialType.System_Int64)
                         return "number";
-                    if (type.SpecialType == Microsoft.CodeAnalysis.SpecialType.System_String)
+                    if (type.SpecialType == SpecialType.System_String)
                         return "text";
-                    if (type.TypeKind == Microsoft.CodeAnalysis.TypeKind.Array)
+                    if (type.TypeKind == TypeKind.Array)
                         return "array";
                 }
             }

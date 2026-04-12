@@ -7,23 +7,25 @@ using StaticCodeAnalyzer.Models;
 
 namespace StaticCodeAnalyzer.Analysis
 {
+    // Выявляет неиспользуемые локальные переменные
     public class UnusedVariableRule : IAnalyzerRule
     {
         public Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
         {
-            var issues = new List<AnalysisIssue>();
-            var localVars = root.DescendantNodes()
+            List<AnalysisIssue> issues = new List<AnalysisIssue>();
+            IEnumerable<VariableDeclaratorSyntax> localVars = root.DescendantNodes()
                 .OfType<VariableDeclaratorSyntax>()
                 .Where(v => v.Parent is VariableDeclarationSyntax decl && decl.Parent is LocalDeclarationStatementSyntax);
 
-            foreach (var variable in localVars)
+            foreach (VariableDeclaratorSyntax variable in localVars)
             {
-                var symbol = semanticModel.GetDeclaredSymbol(variable);
+                ISymbol? symbol = semanticModel.GetDeclaredSymbol(variable);
                 if (symbol == null) continue;
 
-                var method = variable.FirstAncestorOrSelf<MethodDeclarationSyntax>();
+                MethodDeclarationSyntax? method = variable.FirstAncestorOrSelf<MethodDeclarationSyntax>();
                 if (method == null) continue;
 
+                // Подсчитывает использования символа в методе
                 int usageCount = method.DescendantNodes()
                     .OfType<IdentifierNameSyntax>()
                     .Count(id => semanticModel.GetSymbolInfo(id).Symbol != null &&
@@ -31,11 +33,11 @@ namespace StaticCodeAnalyzer.Analysis
 
                 if (usageCount <= 1)
                 {
-                    var location = variable.Identifier.GetLocation();
+                    Microsoft.CodeAnalysis.Location? location = variable.Identifier.GetLocation();
                     if (location != null)
                     {
-                        var lineSpan = location.GetLineSpan();
-                        var containingClass = variable.FirstAncestorOrSelf<ClassDeclarationSyntax>();
+                        FileLinePositionSpan lineSpan = location.GetLineSpan();
+                        ClassDeclarationSyntax? containingClass = variable.FirstAncestorOrSelf<ClassDeclarationSyntax>();
                         issues.Add(new AnalysisIssue
                         {
                             Severity = "Низкий",

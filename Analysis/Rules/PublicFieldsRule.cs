@@ -8,24 +8,25 @@ using StaticCodeAnalyzer.Models;
 
 namespace StaticCodeAnalyzer.Analysis
 {
+    // Предупреждает о публичных полях, нарушающих инкапсуляцию
     public class PublicFieldsRule : IAnalyzerRule
     {
         public Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
         {
-            var issues = new List<AnalysisIssue>();
-            var publicFields = root.DescendantNodes()
+            List<AnalysisIssue> issues = new List<AnalysisIssue>();
+            IEnumerable<FieldDeclarationSyntax> publicFields = root.DescendantNodes()
                 .OfType<FieldDeclarationSyntax>()
                 .Where(f => f.Modifiers.Any(SyntaxKind.PublicKeyword) && !f.Modifiers.Any(SyntaxKind.ConstKeyword));
 
-            foreach (var field in publicFields)
+            foreach (FieldDeclarationSyntax field in publicFields)
             {
-                foreach (var variable in field.Declaration.Variables)
+                foreach (VariableDeclaratorSyntax variable in field.Declaration.Variables)
                 {
-                    var location = variable.Identifier.GetLocation();
+                    Microsoft.CodeAnalysis.Location? location = variable.Identifier.GetLocation();
                     if (location != null)
                     {
-                        var lineSpan = location.GetLineSpan();
-                        var containingClass = field.FirstAncestorOrSelf<ClassDeclarationSyntax>();
+                        FileLinePositionSpan lineSpan = location.GetLineSpan();
+                        ClassDeclarationSyntax? containingClass = field.FirstAncestorOrSelf<ClassDeclarationSyntax>();
                         issues.Add(new AnalysisIssue
                         {
                             Severity = "Средний",

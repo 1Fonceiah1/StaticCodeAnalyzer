@@ -2,7 +2,7 @@ using System.Threading.Tasks;
 using FluentAssertions;
 using Xunit;
 using StaticCodeAnalyzer.Analysis;
-using StaticCodeAnalyzer.Tests;
+using StaticCodeAnalyzer.Models;
 
 namespace StaticCodeAnalyzer.Tests.Integration
 {
@@ -11,8 +11,7 @@ namespace StaticCodeAnalyzer.Tests.Integration
         [Fact]
         public async Task AnalyzeProject_ShouldResolveSymbolsAcrossFiles()
         {
-            // Arrange
-            var code1 = @"
+            string code1 = @"
                 namespace TestNamespace
                 {
                     public class ClassA
@@ -20,7 +19,7 @@ namespace StaticCodeAnalyzer.Tests.Integration
                         public int GetValue() => 42;
                     }
                 }";
-            var code2 = @"
+            string code2 = @"
                 namespace TestNamespace
                 {
                     public class ClassB
@@ -33,12 +32,11 @@ namespace StaticCodeAnalyzer.Tests.Integration
                     }
                 }";
             var files = new[] { ("file1.cs", code1), ("file2.cs", code2) };
-            var context = await TestHelpers.CreateTestProjectContextAsync(files);
+            ProjectContext context = await TestHelpers.CreateTestProjectContextAsync(files);
 
-            var engine = new AnalyzerEngine();
-            var issues = await engine.AnalyzeProjectAsync(context);
+            AnalyzerEngine engine = new AnalyzerEngine();
+            List<AnalysisIssue> issues = await engine.AnalyzeProjectAsync(context);
 
-            // Assert: нет ошибок "undefined identifier" для ClassA и GetValue
             issues.Should().NotContain(i => i.Code == "UND001" && i.Description.Contains("ClassA"));
             issues.Should().NotContain(i => i.Code == "UND001" && i.Description.Contains("GetValue"));
         }

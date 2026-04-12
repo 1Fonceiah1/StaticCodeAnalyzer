@@ -3,6 +3,7 @@ using System.Collections.Generic;
 
 namespace StaticCodeAnalyzer.Models
 {
+    // Модель проекта (решения или папки с кодом)
     public class Project
     {
         public int ProjectId { get; set; }
@@ -17,13 +18,14 @@ namespace StaticCodeAnalyzer.Models
         public ICollection<AnalysisExclusion> Exclusions { get; set; }
     }
 
+    // Модель сеанса сканирования
     public class Scan
     {
         public int ScanId { get; set; }
         public int ProjectId { get; set; }
         public DateTime StartTime { get; set; }
         public DateTime? EndTime { get; set; }
-        public string Parameters { get; set; } // JSONB
+        public string Parameters { get; set; }
         public string UserName { get; set; }
         public string ExternalLogPath { get; set; }
         public int TotalFilesScanned { get; set; }
@@ -34,6 +36,7 @@ namespace StaticCodeAnalyzer.Models
         public ICollection<ScannedFile> ScannedFiles { get; set; }
     }
 
+    // Модель результата анализа (одна проблема)
     public class AnalysisResult
     {
         public int ResultId { get; set; }
@@ -55,6 +58,7 @@ namespace StaticCodeAnalyzer.Models
         public AnalysisRule Rule { get; set; }
     }
 
+    // Модель правила анализа (хранится в БД)
     public class AnalysisRule
     {
         public int RuleId { get; set; }
@@ -68,6 +72,7 @@ namespace StaticCodeAnalyzer.Models
         public ICollection<AnalysisResult> AnalysisResults { get; set; }
     }
 
+    // Модель исключения (игнорируемых файлов/папок)
     public class AnalysisExclusion
     {
         public int ExclusionId { get; set; }
@@ -79,6 +84,7 @@ namespace StaticCodeAnalyzer.Models
         public Project Project { get; set; }
     }
 
+    // Модель отсканированного файла
     public class ScannedFile
     {
         public int ScannedFileId { get; set; }

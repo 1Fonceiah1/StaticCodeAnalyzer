@@ -8,33 +8,35 @@ using StaticCodeAnalyzer.Models;
 
 namespace StaticCodeAnalyzer.Analysis
 {
+    // Выявляет прямые вызовы Console.Write/WriteLine в методах бизнес-логики
     public class ConsoleOutputInBusinessLogicRule : IAnalyzerRule
     {
-        private static readonly HashSet<string> AllowedMethodNames = new()
+        // Имена методов, в которых вывод на консоль разрешён
+        private static readonly HashSet<string> AllowedMethodNames = new HashSet<string>()
         {
             "DisplayOutput", "ShowOutput", "Print", "Log", "WriteToConsole", "Debug"
         };
 
         public Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
         {
-            var issues = new List<AnalysisIssue>();
-            var consoleCalls = root.DescendantNodes()
+            List<AnalysisIssue> issues = new List<AnalysisIssue>();
+            IEnumerable<InvocationExpressionSyntax> consoleCalls = root.DescendantNodes()
                 .OfType<InvocationExpressionSyntax>()
                 .Where(IsConsoleWriteCall);
 
-            foreach (var call in consoleCalls)
+            foreach (InvocationExpressionSyntax call in consoleCalls)
             {
-                var containingMethod = call.FirstAncestorOrSelf<MethodDeclarationSyntax>();
+                MethodDeclarationSyntax? containingMethod = call.FirstAncestorOrSelf<MethodDeclarationSyntax>();
                 if (containingMethod == null) continue;
 
-                var methodName = containingMethod.Identifier.Text;
+                string methodName = containingMethod.Identifier.Text;
                 if (AllowedMethodNames.Contains(methodName)) continue;
 
-                var location = call.GetLocation();
+                Microsoft.CodeAnalysis.Location? location = call.GetLocation();
                 if (location != null)
                 {
-                    var lineSpan = location.GetLineSpan();
-                    var containingClass = containingMethod.FirstAncestorOrSelf<ClassDeclarationSyntax>();
+                    FileLinePositionSpan lineSpan = location.GetLineSpan();
+                    ClassDeclarationSyntax? containingClass = containingMethod.FirstAncestorOrSelf<ClassDeclarationSyntax>();
                     issues.Add(new AnalysisIssue
                     {
                         Severity = "Средний",
@@ -55,13 +57,14 @@ namespace StaticCodeAnalyzer.Analysis
             return Task.FromResult(issues);
         }
 
+        // Определяет, является ли вызов обращением к Console.Write/WriteLine
         private bool IsConsoleWriteCall(InvocationExpressionSyntax invocation)
         {
             if (invocation.Expression is MemberAccessExpressionSyntax member)
             {
                 if (member.Expression is IdentifierNameSyntax id && id.Identifier.Text == "Console")
                 {
-                    var name = member.Name.Identifier.Text;
+                    string name = member.Name.Identifier.Text;
                     return name == "WriteLine" || name == "Write";
                 }
             }

@@ -8,67 +8,68 @@ using StaticCodeAnalyzer.Models;
 
 namespace StaticCodeAnalyzer.Analysis
 {
+    // Выявляет различные формы мёртвого и избыточного кода
     public class DeadCodeRule : IAnalyzerRule
     {
         public Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
         {
-            var issues = new List<AnalysisIssue>();
+            List<AnalysisIssue> issues = new List<AnalysisIssue>();
 
-            // 1. Бесполезные присваивания (x = x + 0, x = x * 1, x = x)
-            var uselessAssignments = root.DescendantNodes()
+            // 1. Находит бесполезные присваивания (x = x + 0, x = x * 1, x = x)
+            List<AssignmentExpressionSyntax> uselessAssignments = root.DescendantNodes()
                 .OfType<AssignmentExpressionSyntax>()
                 .Where(IsUselessAssignment)
                 .ToList();
-            foreach (var assign in uselessAssignments)
+            foreach (AssignmentExpressionSyntax assign in uselessAssignments)
                 AddIssue(assign, assign.GetLocation(), "DEAD001", "Бесполезное присваивание (например, x = x + 0, x = x * 1 или x = x).", issues, filePath);
 
-            // 2. Пустые циклы for (одна итерация)
-            var trivialForLoops = root.DescendantNodes()
+            // 2. Находит тривиальные циклы for (одна итерация без побочных эффектов)
+            List<ForStatementSyntax> trivialForLoops = root.DescendantNodes()
                 .OfType<ForStatementSyntax>()
                 .Where(IsTrivialForLoop)
                 .ToList();
-            foreach (var loop in trivialForLoops)
+            foreach (ForStatementSyntax loop in trivialForLoops)
                 AddIssue(loop, loop.ForKeyword.GetLocation(), "SIM001", "Цикл for с одной итерацией без побочных эффектов.", issues, filePath);
 
-            // 3. Пустые циклы while (одна итерация)
-            var trivialWhileLoops = root.DescendantNodes()
+            // 3. Находит тривиальные циклы while (одна итерация без побочных эффектов)
+            List<WhileStatementSyntax> trivialWhileLoops = root.DescendantNodes()
                 .OfType<WhileStatementSyntax>()
                 .Where(IsTrivialWhileLoop)
                 .ToList();
-            foreach (var loop in trivialWhileLoops)
+            foreach (WhileStatementSyntax loop in trivialWhileLoops)
                 AddIssue(loop, loop.WhileKeyword.GetLocation(), "SIM001", "Цикл while с одной итерацией без побочных эффектов.", issues, filePath);
 
-            // 4. Бесполезные операторы-выражения (просто идентификатор)
-            var uselessIdStatements = root.DescendantNodes()
+            // 4. Находит бесполезные операторы-выражения (просто идентификатор)
+            List<ExpressionStatementSyntax> uselessIdStatements = root.DescendantNodes()
                 .OfType<ExpressionStatementSyntax>()
                 .Where(stmt => stmt.Expression is IdentifierNameSyntax)
                 .ToList();
-            foreach (var stmt in uselessIdStatements)
+            foreach (ExpressionStatementSyntax stmt in uselessIdStatements)
                 AddIssue(stmt, stmt.GetLocation(), "DEAD002", "Бесполезный оператор (просто идентификатор, не имеющий побочных эффектов).", issues, filePath);
 
-            // 5. Пустые блоки else
-            var emptyElseBlocks = root.DescendantNodes()
+            // 5. Находит пустые блоки else
+            List<ElseClauseSyntax> emptyElseBlocks = root.DescendantNodes()
                 .OfType<IfStatementSyntax>()
                 .Where(ifStmt => ifStmt.Else != null && IsEffectivelyEmpty(ifStmt.Else.Statement))
-                .Select(ifStmt => ifStmt.Else)
+                .Select(ifStmt => ifStmt.Else!)
                 .ToList();
-            foreach (var elseClause in emptyElseBlocks)
+            foreach (ElseClauseSyntax elseClause in emptyElseBlocks)
                 AddIssue(elseClause, elseClause.ElseKeyword.GetLocation(), "DEAD003", "Пустой блок else (не содержит полезного кода).", issues, filePath);
 
-            // 6. Пустые блоки if (без else)
-            var emptyIfBlocks = root.DescendantNodes()
+            // 6. Находит пустые блоки if (без else)
+            List<IfStatementSyntax> emptyIfBlocks = root.DescendantNodes()
                 .OfType<IfStatementSyntax>()
                 .Where(ifStmt => ifStmt.Else == null && IsEffectivelyEmpty(ifStmt.Statement))
                 .ToList();
-            foreach (var ifStmt in emptyIfBlocks)
+            foreach (IfStatementSyntax ifStmt in emptyIfBlocks)
                 AddIssue(ifStmt, ifStmt.IfKeyword.GetLocation(), "DEAD003", "Пустой блок if (не содержит полезного кода).", issues, filePath);
 
-            // 7. Дублирующиеся присваивания подряд
-            var methods = root.DescendantNodes().OfType<MethodDeclarationSyntax>().ToList();
-            foreach (var method in methods)
+            // 7. Находит дублирующиеся присваивания подряд
+            List<MethodDeclarationSyntax> methods = root.DescendantNodes().OfType<MethodDeclarationSyntax>().ToList();
+            foreach (MethodDeclarationSyntax method in methods)
             {
                 if (method.Body == null) continue;
-                var statements = method.Body.Statements.ToList();
+                List<StatementSyntax> statements = method.Body.Statements.ToList();
                 for (int i = 0; i < statements.Count - 1; i++)
                 {
                     if (statements[i] is ExpressionStatementSyntax current &&
@@ -83,30 +84,30 @@ namespace StaticCodeAnalyzer.Analysis
                 }
             }
 
-            // 8. Пары противоположных операций (x = x + 1; x = x - 1;)
-            var oppositePairs = FindOppositeOperationPairs(root);
-            foreach (var stmt in oppositePairs)
+            // 8. Находит пары противоположных операций (x = x + 1; x = x - 1;)
+            List<ExpressionStatementSyntax> oppositePairs = FindOppositeOperationPairs(root);
+            foreach (ExpressionStatementSyntax stmt in oppositePairs)
                 AddIssue(stmt, stmt.GetLocation(), "DEAD001", "Пара противоположных операций (например, x = x + 1; x = x - 1;).", issues, filePath);
 
-            // 9. Бесполезные инкременты неиспользуемой переменной
-            var uselessIncrements = FindUselessIncrements(root);
-            foreach (var stmt in uselessIncrements)
+            // 9. Находит бесполезные инкременты неиспользуемой переменной
+            List<ExpressionStatementSyntax> uselessIncrements = FindUselessIncrements(root);
+            foreach (ExpressionStatementSyntax stmt in uselessIncrements)
                 AddIssue(stmt, stmt.GetLocation(), "DEAD001", "Бесполезный инкремент (переменная не используется).", issues, filePath);
 
-            // 10. Бессмысленные if (x == false) { x = false; }
-            var selfAssignIfs = FindSelfAssignIf(root);
-            foreach (var ifStmt in selfAssignIfs)
+            // 10. Находит бессмысленные if (x == false) { x = false; }
+            List<IfStatementSyntax> selfAssignIfs = FindSelfAssignIf(root);
+            foreach (IfStatementSyntax ifStmt in selfAssignIfs)
                 AddIssue(ifStmt, ifStmt.IfKeyword.GetLocation(), "DEAD001", "Бессмысленный if, можно заменить на присваивание.", issues, filePath);
 
             return Task.FromResult(issues);
         }
 
-        private void AddIssue(SyntaxNode node, Location location, string code, string description, List<AnalysisIssue> issues, string filePath)
+        private void AddIssue(SyntaxNode node, Microsoft.CodeAnalysis.Location? location, string code, string description, List<AnalysisIssue> issues, string filePath)
         {
             if (location == null) return;
-            var lineSpan = location.GetLineSpan();
-            var containingMethod = node.FirstAncestorOrSelf<MethodDeclarationSyntax>();
-            var containingClass = node.FirstAncestorOrSelf<ClassDeclarationSyntax>();
+            FileLinePositionSpan lineSpan = location.GetLineSpan();
+            MethodDeclarationSyntax? containingMethod = node.FirstAncestorOrSelf<MethodDeclarationSyntax>();
+            ClassDeclarationSyntax? containingClass = node.FirstAncestorOrSelf<ClassDeclarationSyntax>();
             issues.Add(new AnalysisIssue
             {
                 Severity = "Низкий",
@@ -123,6 +124,7 @@ namespace StaticCodeAnalyzer.Analysis
             });
         }
 
+        // Проверяет, является ли присваивание бесполезным
         private bool IsUselessAssignment(AssignmentExpressionSyntax assign)
         {
             if (!assign.IsKind(SyntaxKind.SimpleAssignmentExpression)) return false;
@@ -139,10 +141,11 @@ namespace StaticCodeAnalyzer.Analysis
             return false;
         }
 
+        // Определяет тривиальный цикл for
         private bool IsTrivialForLoop(ForStatementSyntax forLoop)
         {
             if (forLoop.Declaration == null || forLoop.Condition == null || forLoop.Incrementors.Count == 0) return false;
-            var declarator = forLoop.Declaration.Variables.FirstOrDefault();
+            VariableDeclaratorSyntax? declarator = forLoop.Declaration.Variables.FirstOrDefault();
             if (declarator?.Initializer?.Value is not LiteralExpressionSyntax initLit) return false;
             if (!IsZero(initLit)) return false;
             if (forLoop.Condition is BinaryExpressionSyntax cond &&
@@ -154,13 +157,14 @@ namespace StaticCodeAnalyzer.Analysis
             return false;
         }
 
+        // Определяет тривиальный цикл while
         private bool IsTrivialWhileLoop(WhileStatementSyntax whileLoop)
         {
             if (whileLoop.Condition is BinaryExpressionSyntax cond &&
                 cond.IsKind(SyntaxKind.LessThanExpression) &&
                 cond.Right is LiteralExpressionSyntax rightLit && IsOne(rightLit))
             {
-                var increments = whileLoop.Statement.DescendantNodes()
+                IEnumerable<AssignmentExpressionSyntax> increments = whileLoop.Statement.DescendantNodes()
                     .OfType<AssignmentExpressionSyntax>()
                     .Where(a => a.IsKind(SyntaxKind.AddAssignmentExpression) ||
                                 (a.IsKind(SyntaxKind.SimpleAssignmentExpression) &&
@@ -172,9 +176,10 @@ namespace StaticCodeAnalyzer.Analysis
             return false;
         }
 
+        // Проверяет наличие побочных эффектов в операторе
         private bool HasSideEffects(StatementSyntax statement)
         {
-            foreach (var assign in statement.DescendantNodes().OfType<AssignmentExpressionSyntax>())
+            foreach (AssignmentExpressionSyntax assign in statement.DescendantNodes().OfType<AssignmentExpressionSyntax>())
             {
                 if (assign.Left is ElementAccessExpressionSyntax || assign.Left is MemberAccessExpressionSyntax)
                     return true;
@@ -182,25 +187,33 @@ namespace StaticCodeAnalyzer.Analysis
             return false;
         }
 
-        private bool IsZero(ExpressionSyntax expr) =>
-            expr is LiteralExpressionSyntax lit && lit.IsKind(SyntaxKind.NumericLiteralExpression) &&
-            (lit.Token.Text == "0" || lit.Token.Text == "0.0" || lit.Token.Text == "0f" || lit.Token.Text == "0d" || lit.Token.Text == "0m");
+        // Проверяет, является ли выражение нулём
+        private bool IsZero(ExpressionSyntax expr)
+        {
+            return expr is LiteralExpressionSyntax lit && lit.IsKind(SyntaxKind.NumericLiteralExpression) &&
+                   (lit.Token.Text == "0" || lit.Token.Text == "0.0" || lit.Token.Text == "0f" || lit.Token.Text == "0d" || lit.Token.Text == "0m");
+        }
 
-        private bool IsOne(ExpressionSyntax expr) =>
-            expr is LiteralExpressionSyntax lit && lit.IsKind(SyntaxKind.NumericLiteralExpression) &&
-            (lit.Token.Text == "1" || lit.Token.Text == "1.0" || lit.Token.Text == "1f" || lit.Token.Text == "1d" || lit.Token.Text == "1m");
+        // Проверяет, является ли выражение единицей
+        private bool IsOne(ExpressionSyntax expr)
+        {
+            return expr is LiteralExpressionSyntax lit && lit.IsKind(SyntaxKind.NumericLiteralExpression) &&
+                   (lit.Token.Text == "1" || lit.Token.Text == "1.0" || lit.Token.Text == "1f" || lit.Token.Text == "1d" || lit.Token.Text == "1m");
+        }
 
+        // Проверяет, является ли блок или оператор фактически пустым
         private bool IsEffectivelyEmpty(StatementSyntax statement)
         {
             if (statement is BlockSyntax block)
             {
-                foreach (var stmt in block.Statements)
+                foreach (StatementSyntax stmt in block.Statements)
                     if (!IsUselessOrDeclaration(stmt)) return false;
                 return true;
             }
             return IsUselessOrDeclaration(statement);
         }
 
+        // Определяет бесполезный оператор или объявление
         private bool IsUselessOrDeclaration(StatementSyntax stmt)
         {
             if (stmt is EmptyStatementSyntax) return true;
@@ -213,14 +226,15 @@ namespace StaticCodeAnalyzer.Analysis
             return false;
         }
 
+        // Находит пары противоположных операций
         private List<ExpressionStatementSyntax> FindOppositeOperationPairs(SyntaxNode root)
         {
-            var pairs = new List<ExpressionStatementSyntax>();
-            var methods = root.DescendantNodes().OfType<MethodDeclarationSyntax>();
-            foreach (var method in methods)
+            List<ExpressionStatementSyntax> pairs = new List<ExpressionStatementSyntax>();
+            List<MethodDeclarationSyntax> methods = root.DescendantNodes().OfType<MethodDeclarationSyntax>().ToList();
+            foreach (MethodDeclarationSyntax method in methods)
             {
                 if (method.Body == null) continue;
-                var statements = method.Body.Statements.ToList();
+                List<StatementSyntax> statements = method.Body.Statements.ToList();
                 for (int i = 0; i < statements.Count - 1; i++)
                 {
                     if (statements[i] is ExpressionStatementSyntax stmt1 &&
@@ -236,6 +250,7 @@ namespace StaticCodeAnalyzer.Analysis
             return pairs;
         }
 
+        // Проверяет, являются ли два присваивания противоположными
         private bool IsOpposite(AssignmentExpressionSyntax a1, AssignmentExpressionSyntax a2)
         {
             if (!a1.IsKind(SyntaxKind.SimpleAssignmentExpression) || !a2.IsKind(SyntaxKind.SimpleAssignmentExpression))
@@ -255,20 +270,21 @@ namespace StaticCodeAnalyzer.Analysis
             return false;
         }
 
+        // Находит бесполезные инкременты
         private List<ExpressionStatementSyntax> FindUselessIncrements(SyntaxNode root)
         {
-            var useless = new List<ExpressionStatementSyntax>();
-            var methods = root.DescendantNodes().OfType<MethodDeclarationSyntax>();
-            foreach (var method in methods)
+            List<ExpressionStatementSyntax> useless = new List<ExpressionStatementSyntax>();
+            List<MethodDeclarationSyntax> methods = root.DescendantNodes().OfType<MethodDeclarationSyntax>().ToList();
+            foreach (MethodDeclarationSyntax method in methods)
             {
                 if (method.Body == null) continue;
-                var allIdentifiers = method.Body.DescendantNodes().OfType<IdentifierNameSyntax>().Select(id => id.Identifier.Text).ToList();
-                var declaredVars = method.Body.DescendantNodes()
+                List<string> allIdentifiers = method.Body.DescendantNodes().OfType<IdentifierNameSyntax>().Select(id => id.Identifier.Text).ToList();
+                HashSet<string> declaredVars = method.Body.DescendantNodes()
                     .OfType<VariableDeclaratorSyntax>()
                     .Select(v => v.Identifier.Text)
                     .ToHashSet();
 
-                var increments = method.Body.DescendantNodes()
+                List<ExpressionStatementSyntax> increments = method.Body.DescendantNodes()
                     .OfType<ExpressionStatementSyntax>()
                     .Where(stmt => stmt.Expression is AssignmentExpressionSyntax assign &&
                                    (assign.IsKind(SyntaxKind.AddAssignmentExpression) ||
@@ -277,9 +293,9 @@ namespace StaticCodeAnalyzer.Analysis
                                      bin.IsKind(SyntaxKind.AddExpression) && IsOne(bin.Right))))
                     .ToList();
 
-                foreach (var inc in increments)
+                foreach (ExpressionStatementSyntax inc in increments)
                 {
-                    var left = ((AssignmentExpressionSyntax)inc.Expression).Left.ToString();
+                    string left = ((AssignmentExpressionSyntax)inc.Expression).Left.ToString();
                     int usageCount = allIdentifiers.Count(id => id == left);
                     if (usageCount <= 1 && declaredVars.Contains(left))
                         useless.Add(inc);
@@ -288,11 +304,12 @@ namespace StaticCodeAnalyzer.Analysis
             return useless;
         }
 
+        // Находит конструкции if (x == false) { x = false; }
         private List<IfStatementSyntax> FindSelfAssignIf(SyntaxNode root)
         {
-            var result = new List<IfStatementSyntax>();
-            var ifStatements = root.DescendantNodes().OfType<IfStatementSyntax>();
-            foreach (var ifStmt in ifStatements)
+            List<IfStatementSyntax> result = new List<IfStatementSyntax>();
+            IEnumerable<IfStatementSyntax> ifStatements = root.DescendantNodes().OfType<IfStatementSyntax>();
+            foreach (IfStatementSyntax ifStmt in ifStatements)
             {
                 if (ifStmt.Condition is BinaryExpressionSyntax bin && bin.IsKind(SyntaxKind.EqualsExpression) &&
                     bin.Right is LiteralExpressionSyntax lit && lit.Token.Text == "false" &&

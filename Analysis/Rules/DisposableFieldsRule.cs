@@ -7,20 +7,21 @@ using StaticCodeAnalyzer.Models;
 
 namespace StaticCodeAnalyzer.Analysis
 {
+    // Проверяет, что классы, содержащие поля, реализующие IDisposable, сами реализуют IDisposable
     public class DisposableFieldsRule : IAnalyzerRule
     {
         public Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
         {
-            var issues = new List<AnalysisIssue>();
-            var classes = root.DescendantNodes().OfType<ClassDeclarationSyntax>();
+            List<AnalysisIssue> issues = new List<AnalysisIssue>();
+            IEnumerable<ClassDeclarationSyntax> classes = root.DescendantNodes().OfType<ClassDeclarationSyntax>();
 
-            foreach (var classDecl in classes)
+            foreach (ClassDeclarationSyntax classDecl in classes)
             {
-                var disposableFields = new List<VariableDeclaratorSyntax>();
+                List<VariableDeclaratorSyntax> disposableFields = new List<VariableDeclaratorSyntax>();
 
-                foreach (var fieldDecl in classDecl.DescendantNodes().OfType<FieldDeclarationSyntax>())
+                foreach (FieldDeclarationSyntax fieldDecl in classDecl.DescendantNodes().OfType<FieldDeclarationSyntax>())
                 {
-                    var typeSymbol = semanticModel.GetTypeInfo(fieldDecl.Declaration.Type).Type;
+                    ITypeSymbol? typeSymbol = semanticModel.GetTypeInfo(fieldDecl.Declaration.Type).Type;
                     if (typeSymbol != null && ImplementsIDisposable(typeSymbol))
                     {
                         disposableFields.AddRange(fieldDecl.Declaration.Variables);
@@ -33,10 +34,10 @@ namespace StaticCodeAnalyzer.Analysis
 
                 if (!implementsIDisposable)
                 {
-                    var location = classDecl.Identifier.GetLocation();
+                    Microsoft.CodeAnalysis.Location? location = classDecl.Identifier.GetLocation();
                     if (location != null)
                     {
-                        var lineSpan = location.GetLineSpan();
+                        FileLinePositionSpan lineSpan = location.GetLineSpan();
                         issues.Add(new AnalysisIssue
                         {
                             Severity = "Высокий",
@@ -58,6 +59,7 @@ namespace StaticCodeAnalyzer.Analysis
             return Task.FromResult(issues);
         }
 
+        // Проверяет, реализует ли тип IDisposable
         private bool ImplementsIDisposable(ITypeSymbol type)
         {
             if (type == null) return false;
@@ -68,12 +70,13 @@ namespace StaticCodeAnalyzer.Analysis
             return false;
         }
 
+        // Проверяет, реализует ли класс IDisposable в синтаксическом дереве
         private bool ClassImplementsIDisposable(ClassDeclarationSyntax classDecl, SemanticModel semanticModel)
         {
             if (classDecl.BaseList == null) return false;
             return classDecl.BaseList.Types.Any(t =>
             {
-                var typeName = t.Type.ToString();
+                string typeName = t.Type.ToString();
                 return typeName == "IDisposable" || 
                        typeName == "System.IDisposable" ||
                        typeName.EndsWith(".IDisposable");

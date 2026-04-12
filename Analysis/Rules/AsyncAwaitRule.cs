@@ -8,16 +8,17 @@ using StaticCodeAnalyzer.Models;
 
 namespace StaticCodeAnalyzer.Analysis
 {
+    // Выявляет методы с модификатором async, не содержащие оператора await
     public class AsyncAwaitRule : IAnalyzerRule
     {
         public Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
         {
-            var issues = new List<AnalysisIssue>();
-            var asyncMethods = root.DescendantNodes()
+            List<AnalysisIssue> issues = new List<AnalysisIssue>();
+            IEnumerable<MethodDeclarationSyntax> asyncMethods = root.DescendantNodes()
                 .OfType<MethodDeclarationSyntax>()
                 .Where(m => m.Modifiers.Any(SyntaxKind.AsyncKeyword));
 
-            foreach (var method in asyncMethods)
+            foreach (MethodDeclarationSyntax method in asyncMethods)
             {
                 bool hasAwait = method.DescendantNodes()
                     .OfType<AwaitExpressionSyntax>()
@@ -25,11 +26,11 @@ namespace StaticCodeAnalyzer.Analysis
 
                 if (!hasAwait)
                 {
-                    var location = method.Identifier.GetLocation();
+                    Microsoft.CodeAnalysis.Location? location = method.Identifier.GetLocation();
                     if (location != null)
                     {
-                        var lineSpan = location.GetLineSpan();
-                        var containingClass = method.FirstAncestorOrSelf<ClassDeclarationSyntax>();
+                        FileLinePositionSpan lineSpan = location.GetLineSpan();
+                        ClassDeclarationSyntax? containingClass = method.FirstAncestorOrSelf<ClassDeclarationSyntax>();
                         issues.Add(new AnalysisIssue
                         {
                             Severity = "Средний",

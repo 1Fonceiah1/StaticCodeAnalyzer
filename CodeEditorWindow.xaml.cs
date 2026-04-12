@@ -37,7 +37,7 @@ namespace StaticCodeAnalyzer
                 await LoadIssuesAsync();
                 if (_goToLine.HasValue && _goToLine.Value > 0)
                 {
-                    var lineIndex = _goToLine.Value - 1;
+                    int lineIndex = _goToLine.Value - 1;
                     if (lineIndex >= 0)
                     {
                         CodeEditor.Focus();
@@ -48,6 +48,7 @@ namespace StaticCodeAnalyzer
             };
         }
 
+        // Загружает проблемы анализа для текущего кода и обновляет список доступных рефакторингов
         private async Task LoadIssuesAsync()
         {
             try
@@ -55,16 +56,16 @@ namespace StaticCodeAnalyzer
                 string currentCode = CodeEditor.Text;
                 string tempFile = Path.GetTempFileName() + ".cs";
                 await File.WriteAllTextAsync(tempFile, currentCode);
-                var issues = await _analysisService.AnalyzeFiles(new List<string> { tempFile });
+                List<AnalysisIssue> issues = await _analysisService.AnalyzeFiles(new List<string> { tempFile });
                 IssuesListBox.ItemsSource = issues;
 
-                var fixableCodes = _refactoringEngine.GetFixableIssueCodes();
-                var applicableRules = issues
+                HashSet<string> fixableCodes = _refactoringEngine.GetFixableIssueCodes();
+                List<RuleSelection> applicableRules = issues
                     .Where(i => fixableCodes.Contains(i.Code))
                     .Select(i => new RuleSelection { Name = $"{i.Code} – {i.RuleName}", Code = i.Code })
                     .Distinct()
                     .ToList();
-                foreach (var rule in applicableRules)
+                foreach (RuleSelection rule in applicableRules)
                 {
                     rule.IsSelected = true;
                 }
@@ -80,17 +81,19 @@ namespace StaticCodeAnalyzer
             }
         }
 
+        // Обработчик кнопки "Анализ" – повторно загружает проблемы
         private async void AnalyzeButton_Click(object sender, RoutedEventArgs e)
         {
             await LoadIssuesAsync();
         }
 
+        // Применяет выбранные правила рефакторинга к текущему коду
         private async void RefactorButton_Click(object sender, RoutedEventArgs e)
         {
-            var selectedRules = RulesListBox.ItemsSource as IEnumerable<RuleSelection>;
+            IEnumerable<RuleSelection> selectedRules = RulesListBox.ItemsSource as IEnumerable<RuleSelection>;
             if (selectedRules == null) return;
 
-            var allowedCodes = selectedRules.Where(r => r.IsSelected).Select(r => r.Code).ToHashSet();
+            HashSet<string> allowedCodes = selectedRules.Where(r => r.IsSelected).Select(r => r.Code).ToHashSet();
             if (!allowedCodes.Any())
             {
                 MessageBox.Show("Не выбрано ни одного правила для рефакторинга.", "Информация", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -100,17 +103,17 @@ namespace StaticCodeAnalyzer
             string currentCode = CodeEditor.Text;
             try
             {
-                var result = await _refactoringEngine.ApplyRefactoringWithRollbackAsync(currentCode, allowedCodes);
-                if (result.Success && result.NewCode != currentCode)
+                (string newCode, bool success, List<string> errors) = await _refactoringEngine.ApplyRefactoringWithRollbackAsync(currentCode, allowedCodes);
+                if (success && newCode != currentCode)
                 {
-                    CodeEditor.Text = result.NewCode;
+                    CodeEditor.Text = newCode;
                     _isDirty = true;
                     SaveButton.IsEnabled = true;
                     await LoadIssuesAsync();
                 }
-                else if (!result.Success)
+                else if (!success)
                 {
-                    MessageBox.Show($"Рефакторинг не выполнен из-за ошибок:\n{string.Join("\n", result.Errors)}", 
+                    MessageBox.Show($"Рефакторинг не выполнен из-за ошибок:\n{string.Join("\n", errors)}", 
                         "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
                 }
                 else
@@ -124,13 +127,14 @@ namespace StaticCodeAnalyzer
             }
         }
 
+        // Сохраняет текущий код в файл
         private async void SaveButton_Click(object sender, RoutedEventArgs e)
         {
             string newCode = CodeEditor.Text;
             string savePath = _filePath;
             if (string.IsNullOrEmpty(savePath) || !File.Exists(savePath))
             {
-                var dialog = new SaveFileDialog();
+                SaveFileDialog dialog = new SaveFileDialog();
                 dialog.Filter = "C# files (*.cs)|*.cs";
                 if (dialog.ShowDialog() == true)
                 {
@@ -145,11 +149,12 @@ namespace StaticCodeAnalyzer
             MessageBox.Show("Файл сохранён.", "Успех", MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
+        // Закрывает окно, при необходимости предлагает сохранить изменения
         private void CloseButton_Click(object sender, RoutedEventArgs e)
         {
             if (_isDirty)
             {
-                var result = MessageBox.Show("Имеются несохранённые изменения. Сохранить?", "Предупреждение", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
+                MessageBoxResult result = MessageBox.Show("Имеются несохранённые изменения. Сохранить?", "Предупреждение", MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
                 if (result == MessageBoxResult.Yes)
                 {
                     SaveButton_Click(null, null);
@@ -165,6 +170,7 @@ namespace StaticCodeAnalyzer
             // Можно добавить подсветку в редакторе (опционально)
         }
 
+        // Вспомогательный класс для представления правила в списке выбора
         private class RuleSelection
         {
             public string Name { get; set; }

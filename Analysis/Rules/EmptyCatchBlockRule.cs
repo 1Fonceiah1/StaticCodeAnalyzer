@@ -7,23 +7,24 @@ using StaticCodeAnalyzer.Models;
 
 namespace StaticCodeAnalyzer.Analysis
 {
+    // Выявляет пустые блоки catch, которые подавляют исключения
     public class EmptyCatchBlockRule : IAnalyzerRule
     {
         public Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
         {
-            var issues = new List<AnalysisIssue>();
-            var catchClauses = root.DescendantNodes().OfType<CatchClauseSyntax>();
+            List<AnalysisIssue> issues = new List<AnalysisIssue>();
+            IEnumerable<CatchClauseSyntax> catchClauses = root.DescendantNodes().OfType<CatchClauseSyntax>();
 
-            foreach (var catchClause in catchClauses)
+            foreach (CatchClauseSyntax catchClause in catchClauses)
             {
                 if (catchClause.Block == null || catchClause.Block.Statements.Count == 0)
                 {
-                    var location = catchClause.CatchKeyword.GetLocation();
+                    Microsoft.CodeAnalysis.Location? location = catchClause.CatchKeyword.GetLocation();
                     if (location != null)
                     {
-                        var lineSpan = location.GetLineSpan();
-                        var containingMethod = catchClause.FirstAncestorOrSelf<MethodDeclarationSyntax>();
-                        var containingClass = catchClause.FirstAncestorOrSelf<ClassDeclarationSyntax>();
+                        FileLinePositionSpan lineSpan = location.GetLineSpan();
+                        MethodDeclarationSyntax? containingMethod = catchClause.FirstAncestorOrSelf<MethodDeclarationSyntax>();
+                        ClassDeclarationSyntax? containingClass = catchClause.FirstAncestorOrSelf<ClassDeclarationSyntax>();
                         issues.Add(new AnalysisIssue
                         {
                             Severity = "Высокий",

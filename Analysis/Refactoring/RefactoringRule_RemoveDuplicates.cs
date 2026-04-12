@@ -15,12 +15,12 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 
         public async Task<Document> ApplyAsync(Document document, CancellationToken cancellationToken)
         {
-            var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
-            var semanticModel = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
-            var editor = await DocumentEditor.CreateAsync(document, cancellationToken).ConfigureAwait(false);
+            SyntaxNode root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
+            SemanticModel semanticModel = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
+            DocumentEditor editor = await DocumentEditor.CreateAsync(document, cancellationToken).ConfigureAwait(false);
             bool changed = false;
 
-            var methods = root.DescendantNodes()
+            List<MethodDeclarationSyntax> methods = root.DescendantNodes()
                 .OfType<MethodDeclarationSyntax>()
                 .Where(m => m.Body != null)
                 .ToList();
@@ -29,14 +29,14 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             {
                 for (int j = i + 1; j < methods.Count; j++)
                 {
-                    // Сравниваем не только тела, но и сигнатуры
+                    // Проверяет эквивалентность тел и сигнатур методов
                     if (AreBodiesEquivalent(methods[i].Body, methods[j].Body) && 
                         AreSignaturesEquivalent(methods[i], methods[j], semanticModel, cancellationToken))
                     {
-                        var targetMethod = methods[j];
-                        var sourceMethod = methods[i];
+                        MethodDeclarationSyntax targetMethod = methods[j];
+                        MethodDeclarationSyntax sourceMethod = methods[i];
                         
-                        // Проверяет, не является ли метод уже заменённым
+                        // Пропускает, если метод уже заменён вызовом другого метода
                         if (targetMethod.Body.Statements.Count == 1 && 
                             targetMethod.Body.Statements.First() is ExpressionStatementSyntax exprStmt &&
                             exprStmt.Expression is InvocationExpressionSyntax inv &&
@@ -44,12 +44,12 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                             invId.Identifier.Text == sourceMethod.Identifier.Text)
                             continue;
 
-                        // Получает символ метода для корректной генерации вызова
-                        var methodSymbol = semanticModel.GetDeclaredSymbol(targetMethod, cancellationToken) as IMethodSymbol;
+                        // Получает символ целевого метода
+                        IMethodSymbol? methodSymbol = semanticModel.GetDeclaredSymbol(targetMethod, cancellationToken) as IMethodSymbol;
                         if (methodSymbol == null) continue;
 
                         // Формирует список аргументов из параметров целевого метода
-                        var arguments = SyntaxFactory.ArgumentList(
+                        ArgumentListSyntax arguments = SyntaxFactory.ArgumentList(
                             SyntaxFactory.SeparatedList(
                                 targetMethod.ParameterList.Parameters.Select(p => 
                                     SyntaxFactory.Argument(SyntaxFactory.IdentifierName(p.Identifier)))));
@@ -64,9 +64,9 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                         }
                         else
                         {
-                            var returnType = methodSymbol.ReturnType.ToDisplayString();
-                            var varName = $"result_{sourceMethod.Identifier.Text}";
-                            var decl = SyntaxFactory.LocalDeclarationStatement(
+                            string returnType = methodSymbol.ReturnType.ToDisplayString();
+                            string varName = $"result_{sourceMethod.Identifier.Text}";
+                            LocalDeclarationStatementSyntax decl = SyntaxFactory.LocalDeclarationStatement(
                                 SyntaxFactory.VariableDeclaration(
                                     SyntaxFactory.ParseTypeName(returnType),
                                     SyntaxFactory.SingletonSeparatedList(
@@ -78,8 +78,9 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                             replacementStatement = decl;
                         }
 
-                        var newBody = SyntaxFactory.Block((StatementSyntax)replacementStatement);
-                        var newMethod = targetMethod.WithBody(newBody);
+                        // Заменяет тело метода на вызов исходного метода
+                        BlockSyntax newBody = SyntaxFactory.Block((StatementSyntax)replacementStatement);
+                        MethodDeclarationSyntax newMethod = targetMethod.WithBody(newBody);
                         editor.ReplaceNode(targetMethod, newMethod);
                         changed = true;
                     }
@@ -89,6 +90,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             return changed ? editor.GetChangedDocument() : document;
         }
 
+        // Сравнивает два блока кода на идентичность
         private bool AreBodiesEquivalent(BlockSyntax? body1, BlockSyntax? body2)
         {
             if (body1 == null && body2 == null) return true;
@@ -96,25 +98,23 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             return body1.NormalizeWhitespace().ToFullString() == body2.NormalizeWhitespace().ToFullString();
         }
 
-        /// <summary>
-        /// Сравнивает сигнатуры методов: возвращаемый тип, модификаторы, параметры.
-        /// </summary>
+        // Сравнивает сигнатуры методов: возвращаемый тип, модификаторы, параметры
         private bool AreSignaturesEquivalent(MethodDeclarationSyntax m1, MethodDeclarationSyntax m2, SemanticModel model, CancellationToken ct)
         {
-            var symbol1 = model.GetDeclaredSymbol(m1, ct);
-            var symbol2 = model.GetDeclaredSymbol(m2, ct);
+            IMethodSymbol? symbol1 = model.GetDeclaredSymbol(m1, ct);
+            IMethodSymbol? symbol2 = model.GetDeclaredSymbol(m2, ct);
             if (symbol1 == null || symbol2 == null) return false;
 
-            // Сравнение возвращаемого типа
+            // Сравнивает возвращаемый тип
             if (!SymbolEqualityComparer.Default.Equals(symbol1.ReturnType, symbol2.ReturnType))
                 return false;
 
-            // Сравнение модификаторов (public, static, async, etc.) – упрощённо
-            var mods1 = new HashSet<string>(m1.Modifiers.Select(m => m.Text));
-            var mods2 = new HashSet<string>(m2.Modifiers.Select(m => m.Text));
+            // Сравнивает модификаторы (упрощённо)
+            HashSet<string> mods1 = new HashSet<string>(m1.Modifiers.Select(m => m.Text));
+            HashSet<string> mods2 = new HashSet<string>(m2.Modifiers.Select(m => m.Text));
             if (!mods1.SetEquals(mods2)) return false;
 
-            // Сравнение параметров
+            // Сравнивает параметры
             if (symbol1.Parameters.Length != symbol2.Parameters.Length) return false;
             for (int i = 0; i < symbol1.Parameters.Length; i++)
             {

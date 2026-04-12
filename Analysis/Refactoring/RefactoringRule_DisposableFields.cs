@@ -15,27 +15,27 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 
         public async Task<Document> ApplyAsync(Document document, CancellationToken cancellationToken)
         {
-            var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
-            var semanticModel = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
-            var editor = await DocumentEditor.CreateAsync(document, cancellationToken).ConfigureAwait(false);
+            SyntaxNode root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
+            SemanticModel semanticModel = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
+            DocumentEditor editor = await DocumentEditor.CreateAsync(document, cancellationToken).ConfigureAwait(false);
             bool changed = false;
 
-            var classes = root.DescendantNodes().OfType<ClassDeclarationSyntax>().ToList();
-            foreach (var classDecl in classes)
+            List<ClassDeclarationSyntax> classes = root.DescendantNodes().OfType<ClassDeclarationSyntax>().ToList();
+            foreach (ClassDeclarationSyntax classDecl in classes)
             {
-                var classSymbol = semanticModel.GetDeclaredSymbol(classDecl, cancellationToken);
+                INamedTypeSymbol? classSymbol = semanticModel.GetDeclaredSymbol(classDecl, cancellationToken);
                 if (classSymbol == null) continue;
 
-                // Уже реализует IDisposable?
+                // Проверяет, реализует ли класс уже IDisposable
                 bool alreadyImplements = classSymbol.Interfaces.Any(i => i.Name == "IDisposable") ||
                                          classSymbol.AllInterfaces.Any(i => i.Name == "IDisposable");
                 if (alreadyImplements) continue;
 
-                // Собираем поля, реализующие IDisposable
-                var disposableFieldsInfo = new List<DisposableFieldInfo>();
-                foreach (var fieldDecl in classDecl.DescendantNodes().OfType<FieldDeclarationSyntax>())
+                // Собирает поля, реализующие IDisposable
+                List<DisposableFieldInfo> disposableFieldsInfo = new List<DisposableFieldInfo>();
+                foreach (FieldDeclarationSyntax fieldDecl in classDecl.DescendantNodes().OfType<FieldDeclarationSyntax>())
                 {
-                    foreach (var variable in fieldDecl.Declaration.Variables)
+                    foreach (VariableDeclaratorSyntax variable in fieldDecl.Declaration.Variables)
                     {
                         if (IsDisposable(variable, semanticModel, cancellationToken))
                         {
@@ -50,23 +50,23 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 
                 if (!disposableFieldsInfo.Any()) continue;
 
-                // Проверяем, есть ли уже метод Dispose()
+                // Проверяет наличие метода Dispose() без параметров
                 if (classSymbol.GetMembers("Dispose").OfType<IMethodSymbol>().Any(m => m.Parameters.Length == 0))
                     continue;
 
-                // Создаём новый класс со всеми изменениями
+                // Создаёт изменённую версию класса
                 ClassDeclarationSyntax newClass = classDecl;
 
-                // 1. Добавляем IDisposable к базовым типам
+                // 1. Добавляет IDisposable в список базовых типов
                 if (newClass.BaseList == null || !newClass.BaseList.Types.Any(t => t.Type.ToString().Contains("IDisposable")))
                 {
-                    var baseList = newClass.BaseList ?? SyntaxFactory.BaseList();
+                    BaseListSyntax baseList = newClass.BaseList ?? SyntaxFactory.BaseList();
                     baseList = baseList.AddTypes(SyntaxFactory.SimpleBaseType(SyntaxFactory.ParseTypeName("System.IDisposable")));
                     newClass = newClass.WithBaseList(baseList);
                 }
 
-                // 2. Добавляем поле _disposed
-                var disposedField = SyntaxFactory.FieldDeclaration(
+                // 2. Добавляет поле _disposed
+                FieldDeclarationSyntax disposedField = SyntaxFactory.FieldDeclaration(
                         SyntaxFactory.VariableDeclaration(
                             SyntaxFactory.ParseTypeName("bool"),
                             SyntaxFactory.SingletonSeparatedList(
@@ -77,9 +77,9 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                     .NormalizeWhitespace();
                 newClass = newClass.AddMembers(disposedField);
 
-                // 3. Генерируем Dispose(bool disposing)
-                var disposeBoolBody = GenerateDisposeBoolBody(disposableFieldsInfo);
-                var disposeBoolMethod = SyntaxFactory.MethodDeclaration(
+                // 3. Генерирует метод Dispose(bool disposing)
+                BlockSyntax disposeBoolBody = GenerateDisposeBoolBody(disposableFieldsInfo);
+                MethodDeclarationSyntax disposeBoolMethod = SyntaxFactory.MethodDeclaration(
                         SyntaxFactory.PredefinedType(SyntaxFactory.Token(SyntaxKind.VoidKeyword)), "Dispose")
                     .WithModifiers(SyntaxFactory.TokenList(
                         SyntaxFactory.Token(SyntaxKind.ProtectedKeyword),
@@ -92,8 +92,8 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                     .NormalizeWhitespace();
                 newClass = newClass.AddMembers(disposeBoolMethod);
 
-                // 4. Генерируем публичный Dispose()
-                var publicDisposeBody = SyntaxFactory.Block(
+                // 4. Генерирует публичный метод Dispose()
+                BlockSyntax publicDisposeBody = SyntaxFactory.Block(
                     SyntaxFactory.ExpressionStatement(
                         SyntaxFactory.InvocationExpression(
                             SyntaxFactory.IdentifierName("Dispose"),
@@ -109,14 +109,14 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                             SyntaxFactory.ArgumentList(
                                 SyntaxFactory.SingletonSeparatedList(
                                     SyntaxFactory.Argument(SyntaxFactory.ThisExpression()))))));
-                var publicDisposeMethod = SyntaxFactory.MethodDeclaration(
+                MethodDeclarationSyntax publicDisposeMethod = SyntaxFactory.MethodDeclaration(
                         SyntaxFactory.PredefinedType(SyntaxFactory.Token(SyntaxKind.VoidKeyword)), "Dispose")
                     .WithModifiers(SyntaxFactory.TokenList(SyntaxFactory.Token(SyntaxKind.PublicKeyword)))
                     .WithBody(publicDisposeBody)
                     .NormalizeWhitespace();
                 newClass = newClass.AddMembers(publicDisposeMethod);
 
-                // Заменяем старый класс новым (одна операция)
+                // Заменяет старый класс новым
                 editor.ReplaceNode(classDecl, newClass);
                 changed = true;
             }
@@ -126,16 +126,16 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 
         private BlockSyntax GenerateDisposeBoolBody(List<DisposableFieldInfo> disposableFields)
         {
-            var statements = new List<StatementSyntax>();
+            List<StatementSyntax> statements = new List<StatementSyntax>();
 
-            // if (_disposed) return;
+            // Добавляет проверку _disposed
             statements.Add(SyntaxFactory.IfStatement(
                 SyntaxFactory.IdentifierName("_disposed"),
                 SyntaxFactory.ReturnStatement()));
 
-            // if (disposing) { ... }
-            var disposingBlockStatements = new List<StatementSyntax>();
-            foreach (var field in disposableFields)
+            // Генерирует блок для управляемых ресурсов
+            List<StatementSyntax> disposingBlockStatements = new List<StatementSyntax>();
+            foreach (DisposableFieldInfo field in disposableFields)
             {
                 disposingBlockStatements.Add(SyntaxFactory.IfStatement(
                     SyntaxFactory.BinaryExpression(SyntaxKind.NotEqualsExpression,
@@ -153,7 +153,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                 SyntaxFactory.IdentifierName("disposing"),
                 SyntaxFactory.Block(disposingBlockStatements)));
 
-            // _disposed = true;
+            // Устанавливает флаг disposed
             statements.Add(SyntaxFactory.ExpressionStatement(
                 SyntaxFactory.AssignmentExpression(
                     SyntaxKind.SimpleAssignmentExpression,
@@ -165,7 +165,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 
         private bool IsDisposable(VariableDeclaratorSyntax variable, SemanticModel model, CancellationToken ct)
         {
-            var symbol = model.GetDeclaredSymbol(variable, ct) as IFieldSymbol;
+            IFieldSymbol? symbol = model.GetDeclaredSymbol(variable, ct) as IFieldSymbol;
             if (symbol?.Type == null) return false;
             return symbol.Type.SpecialType == SpecialType.System_IDisposable ||
                    symbol.Type.Interfaces.Any(i => i.Name == "IDisposable");

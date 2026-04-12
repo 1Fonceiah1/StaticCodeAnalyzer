@@ -5,13 +5,14 @@ using StaticCodeAnalyzer.Analysis.Refactoring;
 
 namespace StaticCodeAnalyzer.Tests.Refactoring
 {
+    // Тесты для правила рефакторинга RefactoringRule_AsyncAwait
     public class RefactoringRule_AsyncAwaitTests
     {
         [Fact]
         public async Task ApplyAsync_ShouldReplaceThreadSleepWithTaskDelay()
         {
-            // Arrange
-            var input = @"
+            // Подготавливает код с Thread.Sleep
+            string input = @"
                 using System.Threading;
                 class Test 
                 {
@@ -21,10 +22,10 @@ namespace StaticCodeAnalyzer.Tests.Refactoring
                     }
                 }";
 
-            // Act
-            var result = await TestHelpers.ApplyRefactoringAsync<RefactoringRule_AsyncAwait>(input);
+            // Применяет рефакторинг
+            string result = await TestHelpers.ApplyRefactoringAsync<RefactoringRule_AsyncAwait>(input);
 
-            // Assert
+            // Проверяет, что Thread.Sleep заменён на await Task.Delay, добавлены async Task и using
             result.Should().Contain("await Task.Delay(1000)");
             result.Should().Contain("async Task");
             result.Should().Contain("using System.Threading.Tasks");
@@ -33,8 +34,8 @@ namespace StaticCodeAnalyzer.Tests.Refactoring
         [Fact]
         public async Task ApplyAsync_ShouldRemoveUselessAsync()
         {
-            // Arrange
-            var input = @"
+            // Подготавливает код с async-методом без await
+            string input = @"
                 class Test 
                 {
                     public async Task Method() 
@@ -43,10 +44,10 @@ namespace StaticCodeAnalyzer.Tests.Refactoring
                     }
                 }";
 
-            // Act
-            var result = await TestHelpers.ApplyRefactoringAsync<RefactoringRule_AsyncAwait>(input);
+            // Применяет рефакторинг
+            string result = await TestHelpers.ApplyRefactoringAsync<RefactoringRule_AsyncAwait>(input);
 
-            // Assert
+            // Проверяет, что модификатор async удалён, а Task остался
             result.Should().NotContain("async Task");
             result.Should().Contain("public Task Method()");
         }

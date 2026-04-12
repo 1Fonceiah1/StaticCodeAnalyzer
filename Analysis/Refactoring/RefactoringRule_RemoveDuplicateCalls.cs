@@ -15,43 +15,51 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 
         public async Task<Document> ApplyAsync(Document document, CancellationToken cancellationToken)
         {
-            var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
-            var semanticModel = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
-            var editor = await DocumentEditor.CreateAsync(document, cancellationToken).ConfigureAwait(false);
+            SyntaxNode root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
+            SemanticModel semanticModel = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
+            DocumentEditor editor = await DocumentEditor.CreateAsync(document, cancellationToken).ConfigureAwait(false);
             bool changed = false;
 
-            var methods = root.DescendantNodes().OfType<MethodDeclarationSyntax>().Where(m => m.Body != null);
-            foreach (var method in methods)
+            List<MethodDeclarationSyntax> methods = root.DescendantNodes().OfType<MethodDeclarationSyntax>().Where(m => m.Body != null).ToList();
+            foreach (MethodDeclarationSyntax method in methods)
             {
-                var statements = method.Body.Statements.OfType<ExpressionStatementSyntax>().ToList();
-                var groups = new Dictionary<string, List<InvocationExpressionSyntax>>();
+                List<ExpressionStatementSyntax> statements = method.Body.Statements.OfType<ExpressionStatementSyntax>().ToList();
+                Dictionary<string, List<InvocationExpressionSyntax>> groups = new Dictionary<string, List<InvocationExpressionSyntax>>();
 
-                foreach (var stmt in statements)
+                // Группирует вызовы методов по сигнатуре
+                foreach (ExpressionStatementSyntax stmt in statements)
                 {
-                    foreach (var inv in stmt.DescendantNodes().OfType<InvocationExpressionSyntax>())
+                    foreach (InvocationExpressionSyntax inv in stmt.DescendantNodes().OfType<InvocationExpressionSyntax>())
                     {
-                        var symbol = semanticModel.GetSymbolInfo(inv, cancellationToken).Symbol as IMethodSymbol;
+                        IMethodSymbol? symbol = semanticModel.GetSymbolInfo(inv, cancellationToken).Symbol as IMethodSymbol;
                         if (symbol == null || symbol.ReturnsVoid) continue;
 
-                        var sig = $"{symbol.ContainingType?.ToDisplayString()}.{symbol.Name}({string.Join(",", symbol.Parameters.Select(p => p.Type.ToDisplayString()))})";
-                        if (!groups.TryGetValue(sig, out var list)) groups[sig] = list = new List<InvocationExpressionSyntax>();
+                        string sig = $"{symbol.ContainingType?.ToDisplayString()}.{symbol.Name}({string.Join(",", symbol.Parameters.Select(p => p.Type.ToDisplayString()))})";
+                        if (!groups.TryGetValue(sig, out List<InvocationExpressionSyntax>? list))
+                        {
+                            list = new List<InvocationExpressionSyntax>();
+                            groups[sig] = list;
+                        }
                         list.Add(inv);
                     }
                 }
 
-                foreach (var group in groups.Where(g => g.Value.Count > 1))
+                // Обрабатывает сигнатуры, встречающиеся более одного раза
+                foreach (KeyValuePair<string, List<InvocationExpressionSyntax>> group in groups.Where(g => g.Value.Count > 1))
                 {
-                    var first = group.Value.First();
-                    var firstStmt = first.FirstAncestorOrSelf<StatementSyntax>();
+                    InvocationExpressionSyntax first = group.Value.First();
+                    StatementSyntax? firstStmt = first.FirstAncestorOrSelf<StatementSyntax>();
                     if (firstStmt == null) continue;
 
-                    var methodSym = semanticModel.GetSymbolInfo(first, cancellationToken).Symbol as IMethodSymbol;
+                    IMethodSymbol? methodSym = semanticModel.GetSymbolInfo(first, cancellationToken).Symbol as IMethodSymbol;
                     if (methodSym == null) continue;
 
+                    // Формирует уникальное имя для переменной кеша
                     string varName = $"cached_{methodSym.Name}{char.ToUpperInvariant(methodSym.Name.Length > 4 ? methodSym.Name[4] : 'V')}{methodSym.Name.Substring(1)}";
                     varName = EnsureUnique(varName, method);
 
-                    var decl = SyntaxFactory.LocalDeclarationStatement(
+                    // Создаёт объявление локальной переменной с результатом вызова
+                    LocalDeclarationStatementSyntax decl = SyntaxFactory.LocalDeclarationStatement(
                         SyntaxFactory.VariableDeclaration(
                             SyntaxFactory.ParseTypeName(methodSym.ReturnType.ToDisplayString()),
                             SyntaxFactory.SingletonSeparatedList(
@@ -60,7 +68,8 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 
                     editor.InsertBefore(firstStmt, decl);
 
-                    foreach (var inv in group.Value.Skip(1))
+                    // Заменяет последующие вызовы на использование кешированной переменной
+                    foreach (InvocationExpressionSyntax inv in group.Value.Skip(1))
                     {
                         editor.ReplaceNode(inv, SyntaxFactory.IdentifierName(varName).WithTriviaFrom(inv));
                     }
@@ -71,15 +80,19 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             return changed ? editor.GetChangedDocument() : document;
         }
 
+        // Гарантирует уникальность имени переменной в пределах метода
         private string EnsureUnique(string baseName, MethodDeclarationSyntax method)
         {
-            var existing = method.DescendantNodes()
+            HashSet<string> existing = method.DescendantNodes()
                 .OfType<VariableDeclaratorSyntax>()
                 .Select(v => v.Identifier.Text)
                 .ToHashSet();
             string candidate = baseName;
             int i = 1;
-            while (existing.Contains(candidate)) candidate = $"{baseName}{i++}";
+            while (existing.Contains(candidate))
+            {
+                candidate = $"{baseName}{i++}";
+            }
             return candidate;
         }
     }

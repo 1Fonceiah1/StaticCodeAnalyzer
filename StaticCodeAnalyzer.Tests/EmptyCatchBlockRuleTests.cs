@@ -2,6 +2,7 @@ using System.Threading.Tasks;
 using FluentAssertions;
 using Xunit;
 using StaticCodeAnalyzer.Analysis;
+using StaticCodeAnalyzer.Models;
 
 namespace StaticCodeAnalyzer.Tests.Analysis
 {
@@ -10,8 +11,7 @@ namespace StaticCodeAnalyzer.Tests.Analysis
         [Fact]
         public async Task AnalyzeAsync_ShouldDetectEmptyCatch()
         {
-            // Arrange
-            var code = @"
+            string code = @"
                 class Test 
                 {
                     void Method() 
@@ -26,10 +26,8 @@ namespace StaticCodeAnalyzer.Tests.Analysis
                     }
                 }";
 
-            // Act
-            var issues = await TestHelpers.AnalyzeCodeAsync<EmptyCatchBlockRule>(code);
+            List<AnalysisIssue> issues = await TestHelpers.AnalyzeCodeAsync<EmptyCatchBlockRule>(code);
 
-            // Assert
             issues.Should().ContainSingle(i => i.Code == "ERR001");
             issues.First().Severity.Should().Be("Высокий");
         }
@@ -37,8 +35,7 @@ namespace StaticCodeAnalyzer.Tests.Analysis
         [Fact]
         public async Task AnalyzeAsync_ShouldNotDetectCatchWithContent()
         {
-            // Arrange
-            var code = @"
+            string code = @"
                 class Test 
                 {
                     void Method() 
@@ -54,10 +51,8 @@ namespace StaticCodeAnalyzer.Tests.Analysis
                     }
                 }";
 
-            // Act
-            var issues = await TestHelpers.AnalyzeCodeAsync<EmptyCatchBlockRule>(code);
+            List<AnalysisIssue> issues = await TestHelpers.AnalyzeCodeAsync<EmptyCatchBlockRule>(code);
 
-            // Assert
             issues.Should().BeEmpty();
         }
     }

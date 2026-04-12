@@ -7,36 +7,37 @@ using StaticCodeAnalyzer.Models;
 
 namespace StaticCodeAnalyzer.Analysis
 {
+    // Выявляет повторяющиеся вызовы методов подряд с одинаковыми аргументами
     public class DuplicateMethodCallsRule : IAnalyzerRule
     {
         public Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
         {
-            var issues = new List<AnalysisIssue>();
-            var methods = root.DescendantNodes().OfType<MethodDeclarationSyntax>();
+            List<AnalysisIssue> issues = new List<AnalysisIssue>();
+            IEnumerable<MethodDeclarationSyntax> methods = root.DescendantNodes().OfType<MethodDeclarationSyntax>();
 
-            foreach (var method in methods)
+            foreach (MethodDeclarationSyntax method in methods)
             {
                 if (method.Body == null) continue;
 
-                var statements = method.Body.Statements.OfType<ExpressionStatementSyntax>().ToList();
+                List<ExpressionStatementSyntax> statements = method.Body.Statements.OfType<ExpressionStatementSyntax>().ToList();
                 for (int i = 0; i < statements.Count - 1; i++)
                 {
-                    var currentInvocation = GetInvocation(statements[i].Expression);
-                    var nextInvocation = GetInvocation(statements[i + 1].Expression);
+                    InvocationExpressionSyntax? currentInvocation = GetInvocation(statements[i].Expression);
+                    InvocationExpressionSyntax? nextInvocation = GetInvocation(statements[i + 1].Expression);
                     if (currentInvocation == null || nextInvocation == null) continue;
 
-                    var currentSymbol = semanticModel.GetSymbolInfo(currentInvocation).Symbol as IMethodSymbol;
-                    var nextSymbol = semanticModel.GetSymbolInfo(nextInvocation).Symbol as IMethodSymbol;
+                    IMethodSymbol? currentSymbol = semanticModel.GetSymbolInfo(currentInvocation).Symbol as IMethodSymbol;
+                    IMethodSymbol? nextSymbol = semanticModel.GetSymbolInfo(nextInvocation).Symbol as IMethodSymbol;
                     if (currentSymbol == null || nextSymbol == null) continue;
 
                     if (SymbolEqualityComparer.Default.Equals(currentSymbol, nextSymbol) &&
                         AreArgumentsEqual(currentInvocation.ArgumentList, nextInvocation.ArgumentList, semanticModel))
                     {
-                        var location = statements[i + 1].GetLocation();
+                        Microsoft.CodeAnalysis.Location? location = statements[i + 1].GetLocation();
                         if (location != null)
                         {
-                            var lineSpan = location.GetLineSpan();
-                            var containingClass = method.FirstAncestorOrSelf<ClassDeclarationSyntax>();
+                            FileLinePositionSpan lineSpan = location.GetLineSpan();
+                            ClassDeclarationSyntax? containingClass = method.FirstAncestorOrSelf<ClassDeclarationSyntax>();
                             issues.Add(new AnalysisIssue
                             {
                                 Severity = "Низкий",
@@ -59,11 +60,13 @@ namespace StaticCodeAnalyzer.Analysis
             return Task.FromResult(issues);
         }
 
-        private InvocationExpressionSyntax GetInvocation(ExpressionSyntax expr)
+        // Извлекает выражение вызова метода
+        private InvocationExpressionSyntax? GetInvocation(ExpressionSyntax expr)
         {
             return expr as InvocationExpressionSyntax;
         }
 
+        // Сравнивает списки аргументов двух вызовов
         private bool AreArgumentsEqual(ArgumentListSyntax args1, ArgumentListSyntax args2, SemanticModel model)
         {
             if (args1 == null && args2 == null) return true;
@@ -72,10 +75,10 @@ namespace StaticCodeAnalyzer.Analysis
 
             for (int i = 0; i < args1.Arguments.Count; i++)
             {
-                var arg1 = args1.Arguments[i].Expression;
-                var arg2 = args2.Arguments[i].Expression;
-                var const1 = model.GetConstantValue(arg1);
-                var const2 = model.GetConstantValue(arg2);
+                ExpressionSyntax arg1 = args1.Arguments[i].Expression;
+                ExpressionSyntax arg2 = args2.Arguments[i].Expression;
+                Optional<object> const1 = model.GetConstantValue(arg1);
+                Optional<object> const2 = model.GetConstantValue(arg2);
                 if (const1.HasValue && const2.HasValue)
                 {
                     if (!Equals(const1.Value, const2.Value))

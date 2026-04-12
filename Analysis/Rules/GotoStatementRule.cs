@@ -7,21 +7,22 @@ using StaticCodeAnalyzer.Models;
 
 namespace StaticCodeAnalyzer.Analysis
 {
+    // Предупреждает об использовании оператора goto, усложняющего понимание кода
     public class GotoStatementRule : IAnalyzerRule
     {
         public Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
         {
-            var issues = new List<AnalysisIssue>();
-            var gotoStatements = root.DescendantNodes().OfType<GotoStatementSyntax>();
+            List<AnalysisIssue> issues = new List<AnalysisIssue>();
+            IEnumerable<GotoStatementSyntax> gotoStatements = root.DescendantNodes().OfType<GotoStatementSyntax>();
 
-            foreach (var gotoStmt in gotoStatements)
+            foreach (GotoStatementSyntax gotoStmt in gotoStatements)
             {
-                var location = gotoStmt.GotoKeyword.GetLocation();
+                Microsoft.CodeAnalysis.Location? location = gotoStmt.GotoKeyword.GetLocation();
                 if (location != null)
                 {
-                    var lineSpan = location.GetLineSpan();
-                    var containingMethod = gotoStmt.FirstAncestorOrSelf<MethodDeclarationSyntax>();
-                    var containingClass = gotoStmt.FirstAncestorOrSelf<ClassDeclarationSyntax>();
+                    FileLinePositionSpan lineSpan = location.GetLineSpan();
+                    MethodDeclarationSyntax? containingMethod = gotoStmt.FirstAncestorOrSelf<MethodDeclarationSyntax>();
+                    ClassDeclarationSyntax? containingClass = gotoStmt.FirstAncestorOrSelf<ClassDeclarationSyntax>();
                     issues.Add(new AnalysisIssue
                     {
                         Severity = "Средний",

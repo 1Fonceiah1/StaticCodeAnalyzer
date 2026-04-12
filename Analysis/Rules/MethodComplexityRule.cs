@@ -8,25 +8,26 @@ using StaticCodeAnalyzer.Models;
 
 namespace StaticCodeAnalyzer.Analysis
 {
+    // Проверяет цикломатическую сложность методов, предупреждает о превышении порога
     public class MethodComplexityRule : IAnalyzerRule
     {
         private const int MaxComplexity = 10;
 
         public Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
         {
-            var issues = new List<AnalysisIssue>();
-            var methods = root.DescendantNodes().OfType<MethodDeclarationSyntax>();
+            List<AnalysisIssue> issues = new List<AnalysisIssue>();
+            IEnumerable<MethodDeclarationSyntax> methods = root.DescendantNodes().OfType<MethodDeclarationSyntax>();
 
-            foreach (var method in methods)
+            foreach (MethodDeclarationSyntax method in methods)
             {
                 int complexity = CalculateCyclomaticComplexity(method);
                 if (complexity > MaxComplexity)
                 {
-                    var location = method.Identifier.GetLocation();
+                    Microsoft.CodeAnalysis.Location? location = method.Identifier.GetLocation();
                     if (location != null)
                     {
-                        var lineSpan = location.GetLineSpan();
-                        var containingClass = method.FirstAncestorOrSelf<ClassDeclarationSyntax>();
+                        FileLinePositionSpan lineSpan = location.GetLineSpan();
+                        ClassDeclarationSyntax? containingClass = method.FirstAncestorOrSelf<ClassDeclarationSyntax>();
                         issues.Add(new AnalysisIssue
                         {
                             Severity = "Высокий",
@@ -48,9 +49,10 @@ namespace StaticCodeAnalyzer.Analysis
             return Task.FromResult(issues);
         }
 
+        // Вычисляет цикломатическую сложность метода
         private int CalculateCyclomaticComplexity(MethodDeclarationSyntax method)
         {
-            var nodes = method.DescendantNodes();
+            IEnumerable<SyntaxNode> nodes = method.DescendantNodes();
             int complexity = 1;
 
             complexity += nodes.OfType<IfStatementSyntax>().Count();

@@ -3,6 +3,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Editing;
 using Microsoft.CodeAnalysis.FindSymbols;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -15,18 +16,18 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 
         public async Task<Document> ApplyAsync(Document document, CancellationToken cancellationToken)
         {
-            var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
-            var semanticModel = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
-            var editor = await DocumentEditor.CreateAsync(document, cancellationToken).ConfigureAwait(false);
+            SyntaxNode root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
+            SemanticModel semanticModel = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
+            DocumentEditor editor = await DocumentEditor.CreateAsync(document, cancellationToken).ConfigureAwait(false);
             bool changed = false;
             bool needsTaskUsing = false;
-            var solution = document.Project.Solution;
+            Solution solution = document.Project.Solution;
 
-            var methods = root.DescendantNodes().OfType<MethodDeclarationSyntax>().ToList();
+            List<MethodDeclarationSyntax> methods = root.DescendantNodes().OfType<MethodDeclarationSyntax>().ToList();
 
-            foreach (var method in methods)
+            foreach (MethodDeclarationSyntax method in methods)
             {
-                var threadSleeps = method.DescendantNodes()
+                List<InvocationExpressionSyntax> threadSleeps = method.DescendantNodes()
                     .OfType<InvocationExpressionSyntax>()
                     .Where(inv => inv.Expression is MemberAccessExpressionSyntax ma &&
                                   ma.Expression.ToString() == "Thread" &&
@@ -37,13 +38,13 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                 {
                     needsTaskUsing = true;
 
-                    // Пакетная замена всех Thread.Sleep → await Task.Delay
-                    var newMethod = method.ReplaceNodes(threadSleeps, (original, _) =>
+                    // Заменяет пакетно все вызовы Thread.Sleep на await Task.Delay
+                    MethodDeclarationSyntax newMethod = method.ReplaceNodes(threadSleeps, (original, _) =>
                     {
-                        var arg = original.ArgumentList.Arguments.FirstOrDefault();
+                        ArgumentSyntax? arg = original.ArgumentList.Arguments.FirstOrDefault();
                         if (arg == null) return original;
 
-                        var delay = SyntaxFactory.InvocationExpression(
+                        InvocationExpressionSyntax delay = SyntaxFactory.InvocationExpression(
                                 SyntaxFactory.MemberAccessExpression(
                                     SyntaxKind.SimpleMemberAccessExpression,
                                     SyntaxFactory.IdentifierName("Task"),
@@ -53,15 +54,15 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                         return SyntaxFactory.AwaitExpression(delay).WithTriviaFrom(original);
                     });
 
-                    // Добавляет async, если отсутствует
+                    // Добавляет модификатор async, если отсутствует
                     if (!newMethod.Modifiers.Any(SyntaxKind.AsyncKeyword))
                         newMethod = newMethod.AddModifiers(SyntaxFactory.Token(SyntaxKind.AsyncKeyword));
 
                     // Корректирует возвращаемый тип
-                    var returnTypeSymbol = semanticModel.GetTypeInfo(method.ReturnType, cancellationToken).Type;
+                    ITypeSymbol? returnTypeSymbol = semanticModel.GetTypeInfo(method.ReturnType, cancellationToken).Type;
                     if (returnTypeSymbol?.SpecialType == SpecialType.System_Void)
                     {
-                        // Проверяем, можно ли безопасно изменить void → Task
+                        // Проверяет возможность безопасной замены void на Task
                         bool hasExternalReferences = await HasExternalReferencesAsync(method, semanticModel, solution, cancellationToken).ConfigureAwait(false);
                         if (!hasExternalReferences)
                         {
@@ -69,7 +70,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                         }
                         else
                         {
-                            var warningComment = SyntaxFactory.TriviaList(
+                            SyntaxTriviaList warningComment = SyntaxFactory.TriviaList(
                                 SyntaxFactory.Comment("// ВНИМАНИЕ: метод содержит Thread.Sleep, но его возвращаемый тип не изменён из-за внешних вызовов. Измените вручную на Task."),
                                 SyntaxFactory.CarriageReturnLineFeed);
                             newMethod = newMethod.WithLeadingTrivia(warningComment);
@@ -79,38 +80,38 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                              returnTypeSymbol.Name != "Task" &&
                              !returnTypeSymbol.Name.StartsWith("Task`"))
                     {
-                        // Не-Task и не-void – не меняем автоматически, только выдаём предупреждение через комментарий
-                        var warningComment = SyntaxFactory.TriviaList(
+                        // Не изменяет автоматически для типов, отличных от Task и void; добавляет предупреждающий комментарий
+                        SyntaxTriviaList warningComment = SyntaxFactory.TriviaList(
                             SyntaxFactory.Comment("// ВНИМАНИЕ: метод содержит Thread.Sleep, но его возвращаемый тип не изменён автоматически. Рассмотрите смену на Task<T> вручную."),
                             SyntaxFactory.CarriageReturnLineFeed);
                         newMethod = newMethod.WithLeadingTrivia(warningComment);
                     }
-                    // Если уже Task или Task<T> – оставляем как есть
+                    // Оставляет без изменений, если возвращаемый тип уже Task или Task<T>
 
                     editor.ReplaceNode(method, newMethod.NormalizeWhitespace());
                     changed = true;
                 }
-                // Удаляет бесполезный async
+                // Удаляет бесполезный модификатор async
                 else if (method.Modifiers.Any(SyntaxKind.AsyncKeyword) &&
                          !method.DescendantNodes().OfType<AwaitExpressionSyntax>().Any())
                 {
-                    var newModifiers = method.Modifiers.Where(m => !m.IsKind(SyntaxKind.AsyncKeyword));
-                    var newMethod = method.WithModifiers(SyntaxFactory.TokenList(newModifiers));
+                    IEnumerable<SyntaxToken> newModifiers = method.Modifiers.Where(m => !m.IsKind(SyntaxKind.AsyncKeyword));
+                    MethodDeclarationSyntax newMethod = method.WithModifiers(SyntaxFactory.TokenList(newModifiers));
                     editor.ReplaceNode(method, newMethod.NormalizeWhitespace());
                     changed = true;
                 }
             }
 
-            var resultDoc = changed ? editor.GetChangedDocument() : document;
+            Document resultDoc = changed ? editor.GetChangedDocument() : document;
 
-            // Добавляет using System.Threading.Tasks только если он не был добавлен ранее
+            // Добавляет директиву using System.Threading.Tasks, если она отсутствует
             if (needsTaskUsing)
             {
-                var finalRoot = await resultDoc.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false) as CompilationUnitSyntax;
+                CompilationUnitSyntax? finalRoot = await resultDoc.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false) as CompilationUnitSyntax;
                 if (finalRoot != null && !finalRoot.Usings.Any(u => u.Name?.ToString() == "System.Threading.Tasks"))
                 {
-                    var usingTask = SyntaxFactory.UsingDirective(SyntaxFactory.ParseName("System.Threading.Tasks"));
-                    var newRoot = finalRoot.AddUsings(usingTask).NormalizeWhitespace();
+                    UsingDirectiveSyntax usingTask = SyntaxFactory.UsingDirective(SyntaxFactory.ParseName("System.Threading.Tasks"));
+                    CompilationUnitSyntax newRoot = finalRoot.AddUsings(usingTask).NormalizeWhitespace();
                     resultDoc = resultDoc.WithSyntaxRoot(newRoot);
                 }
             }
@@ -120,12 +121,12 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 
         private async Task<bool> HasExternalReferencesAsync(MethodDeclarationSyntax method, SemanticModel semanticModel, Solution solution, CancellationToken ct)
         {
-            var methodSymbol = semanticModel.GetDeclaredSymbol(method, ct);
+            IMethodSymbol? methodSymbol = semanticModel.GetDeclaredSymbol(method, ct);
             if (methodSymbol == null) return false;
 
-            var references = await SymbolFinder.FindReferencesAsync(methodSymbol, solution, ct).ConfigureAwait(false);
-            // Исключаем само объявление метода
-            var referencingLocations = references.SelectMany(r => r.Locations)
+            IEnumerable<ReferencedSymbol> references = await SymbolFinder.FindReferencesAsync(methodSymbol, solution, ct).ConfigureAwait(false);
+            // Исключает объявление самого метода
+            IEnumerable<ReferenceLocation> referencingLocations = references.SelectMany(r => r.Locations)
                                                   .Where(loc => !loc.IsImplicit && loc.Location.SourceSpan != method.Span);
             return referencingLocations.Any();
         }

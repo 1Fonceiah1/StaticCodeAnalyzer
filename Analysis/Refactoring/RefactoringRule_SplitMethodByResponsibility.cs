@@ -17,21 +17,21 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 
         public async Task<Document> ApplyAsync(Document document, CancellationToken cancellationToken)
         {
-            var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
-            var editor = await DocumentEditor.CreateAsync(document, cancellationToken).ConfigureAwait(false);
+            SyntaxNode root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
+            DocumentEditor editor = await DocumentEditor.CreateAsync(document, cancellationToken).ConfigureAwait(false);
             bool changed = false;
 
-            var methods = root.DescendantNodes()
+            List<MethodDeclarationSyntax> methods = root.DescendantNodes()
                 .OfType<MethodDeclarationSyntax>()
                 .Where(m => m.Body != null && m.Body.Statements.Count > MaxStatements)
                 .ToList();
 
-            foreach (var method in methods)
+            foreach (MethodDeclarationSyntax method in methods)
             {
-                var classDecl = method.FirstAncestorOrSelf<ClassDeclarationSyntax>();
+                ClassDeclarationSyntax? classDecl = method.FirstAncestorOrSelf<ClassDeclarationSyntax>();
                 if (classDecl == null) continue;
 
-                // Проверяем, есть ли уже методы с именами ComputeValues/DisplayOutputs в этом классе
+                // Проверяет наличие уже существующих методов ComputeValues и DisplayOutputs в классе
                 bool hasCompute = classDecl.Members
                     .OfType<MethodDeclarationSyntax>()
                     .Any(m => m.Identifier.Text == "ComputeValues");
@@ -39,7 +39,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                     .OfType<MethodDeclarationSyntax>()
                     .Any(m => m.Identifier.Text == "DisplayOutputs");
 
-                // Проверяем, не вызывает ли уже метод ComputeValues() или DisplayOutputs()
+                // Проверяет, не вызывает ли уже метод ComputeValues() или DisplayOutputs()
                 bool alreadyHasComputeCall = method.Body.Statements
                     .OfType<ExpressionStatementSyntax>()
                     .Any(stmt => stmt.Expression is InvocationExpressionSyntax inv &&
@@ -51,16 +51,16 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                                  inv.Expression is IdentifierNameSyntax id &&
                                  id.Identifier.Text == "DisplayOutputs");
 
-                // Если оба метода уже существуют в классе и уже вызываются, пропускаем
+                // Пропускает, если оба метода уже существуют и вызываются
                 if (hasCompute && hasDisplay && alreadyHasComputeCall && alreadyHasDisplayCall)
                     continue;
 
-                var statements = method.Body.Statements.ToList();
-                var computation = new List<StatementSyntax>();
-                var output = new List<StatementSyntax>();
-                var other = new List<StatementSyntax>();
+                List<StatementSyntax> statements = method.Body.Statements.ToList();
+                List<StatementSyntax> computation = new List<StatementSyntax>();
+                List<StatementSyntax> output = new List<StatementSyntax>();
+                List<StatementSyntax> other = new List<StatementSyntax>();
 
-                foreach (var stmt in statements)
+                foreach (StatementSyntax stmt in statements)
                 {
                     if (ContainsConsoleWrite(stmt))
                         output.Add(stmt);
@@ -70,22 +70,21 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                         other.Add(stmt);
                 }
 
-                // Если нет ни вычислений, ни вывода, пропускаем
+                // Пропускает, если нет ни вычислений, ни вывода
                 if (!computation.Any() && !output.Any())
                     continue;
 
-                // Безопасность: если в методе есть локальные переменные, не выносим блоки
-                // (потому что переменные могут быть нужны и в других частях метода)
+                // Пропускает методы, содержащие локальные переменные (для безопасности)
                 bool hasLocalVariables = method.Body.Statements
                     .OfType<LocalDeclarationStatementSyntax>()
                     .Any();
                 if (hasLocalVariables && (computation.Any() || output.Any()))
                     continue;
 
-                // Создаём ComputeValues, если есть вычисления и метод ещё не создан
+                // Создаёт метод ComputeValues, если есть вычисления и метод ещё не создан
                 if (computation.Any() && !hasCompute && !alreadyHasComputeCall)
                 {
-                    var computeMethod = SyntaxFactory.MethodDeclaration(
+                    MethodDeclarationSyntax computeMethod = SyntaxFactory.MethodDeclaration(
                             SyntaxFactory.PredefinedType(SyntaxFactory.Token(SyntaxKind.VoidKeyword)),
                             "ComputeValues")
                         .WithModifiers(SyntaxFactory.TokenList(SyntaxFactory.Token(SyntaxKind.PrivateKeyword)))
@@ -96,10 +95,10 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                     changed = true;
                 }
 
-                // Создаём DisplayOutputs, если есть вывод и метод ещё не создан
+                // Создаёт метод DisplayOutputs, если есть вывод и метод ещё не создан
                 if (output.Any() && !hasDisplay && !alreadyHasDisplayCall)
                 {
-                    var displayMethod = SyntaxFactory.MethodDeclaration(
+                    MethodDeclarationSyntax displayMethod = SyntaxFactory.MethodDeclaration(
                             SyntaxFactory.PredefinedType(SyntaxFactory.Token(SyntaxKind.VoidKeyword)),
                             "DisplayOutputs")
                         .WithModifiers(SyntaxFactory.TokenList(SyntaxFactory.Token(SyntaxKind.PrivateKeyword)))
@@ -110,17 +109,17 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                     changed = true;
                 }
 
-                // Если хотя бы один метод был добавлен, перестраиваем тело исходного метода
+                // Если хотя бы один метод добавлен, перестраивает тело исходного метода
                 if ((hasCompute && computation.Any()) || (hasDisplay && output.Any()))
                 {
-                    var newBodyStatements = new List<StatementSyntax>();
+                    List<StatementSyntax> newBodyStatements = new List<StatementSyntax>();
                     if (hasCompute && computation.Any() && !alreadyHasComputeCall)
                         newBodyStatements.Add(CreateInvocation("ComputeValues"));
                     if (hasDisplay && output.Any() && !alreadyHasDisplayCall)
                         newBodyStatements.Add(CreateInvocation("DisplayOutputs"));
                     newBodyStatements.AddRange(other);
 
-                    var newMethod = method.WithBody(SyntaxFactory.Block(newBodyStatements));
+                    MethodDeclarationSyntax newMethod = method.WithBody(SyntaxFactory.Block(newBodyStatements));
                     editor.ReplaceNode(method, newMethod);
                     changed = true;
                 }
@@ -129,21 +128,32 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             return changed ? editor.GetChangedDocument() : document;
         }
 
-        private bool ContainsConsoleWrite(StatementSyntax stmt) =>
-            stmt.DescendantNodes().OfType<InvocationExpressionSyntax>()
+        // Проверяет, содержит ли оператор вызов Console.Write/WriteLine
+        private bool ContainsConsoleWrite(StatementSyntax stmt)
+        {
+            return stmt.DescendantNodes().OfType<InvocationExpressionSyntax>()
                 .Any(inv => inv.Expression is MemberAccessExpressionSyntax ma &&
                             ma.Expression is IdentifierNameSyntax { Identifier.Text: "Console" } &&
                             (ma.Name.Identifier.Text == "WriteLine" || ma.Name.Identifier.Text == "Write"));
+        }
 
-        private bool ContainsComputation(StatementSyntax stmt) =>
-            stmt.DescendantNodes().OfType<AssignmentExpressionSyntax>().Any() ||
-            stmt.DescendantNodes().OfType<BinaryExpressionSyntax>()
-                .Any(b => b.IsKind(SyntaxKind.AddExpression) || b.IsKind(SyntaxKind.MultiplyExpression) || b.IsKind(SyntaxKind.SubtractExpression));
+        // Проверяет, содержит ли оператор вычислительные операции (присваивания или арифметику)
+        private bool ContainsComputation(StatementSyntax stmt)
+        {
+            return stmt.DescendantNodes().OfType<AssignmentExpressionSyntax>().Any() ||
+                   stmt.DescendantNodes().OfType<BinaryExpressionSyntax>()
+                       .Any(b => b.IsKind(SyntaxKind.AddExpression) || 
+                                 b.IsKind(SyntaxKind.MultiplyExpression) || 
+                                 b.IsKind(SyntaxKind.SubtractExpression));
+        }
 
-        private StatementSyntax CreateInvocation(string methodName) =>
-            SyntaxFactory.ExpressionStatement(
+        // Создаёт оператор вызова метода без аргументов
+        private StatementSyntax CreateInvocation(string methodName)
+        {
+            return SyntaxFactory.ExpressionStatement(
                 SyntaxFactory.InvocationExpression(
                     SyntaxFactory.IdentifierName(methodName),
                     SyntaxFactory.ArgumentList()));
+        }
     }
 }

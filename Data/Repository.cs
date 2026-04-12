@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 
 namespace StaticCodeAnalyzer.Data
 {
+    // Репозиторий для работы с базой данных (CRUD-операции)
     public class Repository : IDisposable
     {
         private readonly AppDbContext _context;
@@ -16,9 +17,10 @@ namespace StaticCodeAnalyzer.Data
             _context = context;
         }
 
+        // Возвращает существующий проект по пути или создаёт новый
         public async Task<Project> GetOrCreateProjectAsync(string projectPath, string projectName)
         {
-            var project = await _context.Projects.FirstOrDefaultAsync(p => p.ProjectPath == projectPath);
+            Project project = await _context.Projects.FirstOrDefaultAsync(p => p.ProjectPath == projectPath);
             if (project == null)
             {
                 project = new Project
@@ -34,17 +36,20 @@ namespace StaticCodeAnalyzer.Data
             return project;
         }
 
+        // Добавляет запись о сканировании
         public async Task AddScanAsync(Scan scan)
         {
             _context.Scans.Add(scan);
             await _context.SaveChangesAsync();
         }
 
+        // Добавляет коллекцию результатов анализа
         public async Task AddAnalysisResultsAsync(IEnumerable<AnalysisResult> results)
         {
             await _context.AnalysisResults.AddRangeAsync(results);
         }
 
+        // Сохраняет все изменения в базе данных
         public async Task SaveChangesAsync()
         {
             await _context.SaveChangesAsync();
