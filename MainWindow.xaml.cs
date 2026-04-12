@@ -38,7 +38,6 @@ namespace StaticCodeAnalyzer
             _currentIssues = new List<AnalysisIssue>();
             this.Closing += MainWindow_Closing;
 
-            // Настройка фильтрации
             _resultsViewSource = new CollectionViewSource();
             _resultsViewSource.Filter += ResultsFilter;
 
@@ -167,9 +166,6 @@ namespace StaticCodeAnalyzer
             _cancellationTokenSource = new CancellationTokenSource();
             var token = _cancellationTokenSource.Token;
 
-            CancelButton.IsEnabled = true;
-            ProgressBar.Visibility = Visibility.Visible;
-            ProgressBar.Value = 0;
             StatusText.Text = "Анализ...";
             Mouse.OverrideCursor = Cursors.Wait;
             Logger.Log("AnalyzeStart", $"Объект: {_currentPath}");
@@ -185,9 +181,14 @@ namespace StaticCodeAnalyzer
                     return;
                 }
 
-                var progress = new Progress<int>(value => ProgressBar.Value = value);
-                var issues = await Task.Run(() => _analysisService.AnalyzeFiles(filesToAnalyze, progress, token), token);
+                var issues = await Task.Run(() => _analysisService.AnalyzeFiles(filesToAnalyze, null, token), token);
                 _currentIssues = issues;
+
+                if (_analysisService.Engine.LastErrors.Any())
+                {
+                    var errorList = string.Join("\n", _analysisService.Engine.LastErrors.Select(e => $"{e.RuleName} в {e.FilePath}: {e.ErrorMessage}"));
+                    MessageBox.Show($"Некоторые правила завершились с ошибками:\n{errorList}", "Ошибки анализа", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
 
                 await SaveAnalysisResultsToDbAsync(issues, _currentPath, _isFolder);
 
@@ -210,8 +211,6 @@ namespace StaticCodeAnalyzer
             finally
             {
                 Mouse.OverrideCursor = null;
-                CancelButton.IsEnabled = false;
-                ProgressBar.Visibility = Visibility.Collapsed;
                 _cancellationTokenSource?.Dispose();
                 _cancellationTokenSource = null;
             }
@@ -305,13 +304,6 @@ namespace StaticCodeAnalyzer
             }
         }
 
-        private void CancelButton_Click(object sender, RoutedEventArgs e)
-        {
-            _cancellationTokenSource?.Cancel();
-            CancelButton.IsEnabled = false;
-            StatusText.Text = "Отмена операции...";
-        }
-
         private void ResultsGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
             var issue = ResultsGrid.SelectedItem as AnalysisIssue;
@@ -324,7 +316,6 @@ namespace StaticCodeAnalyzer
             editor.ShowDialog();
         }
 
-        // Фильтрация
         private void Filter_Changed(object sender, EventArgs e)
         {
             _resultsViewSource?.View?.Refresh();
@@ -346,7 +337,6 @@ namespace StaticCodeAnalyzer
                 return;
             }
 
-            // Фильтр по важности
             var severityItem = FilterSeverity.SelectedItem as ComboBoxItem;
             if (severityItem != null && severityItem.Content.ToString() != "Все")
             {
@@ -357,7 +347,6 @@ namespace StaticCodeAnalyzer
                 }
             }
 
-            // Фильтр по коду
             if (!string.IsNullOrWhiteSpace(FilterCode.Text))
             {
                 if (!issue.Code.Contains(FilterCode.Text, StringComparison.OrdinalIgnoreCase))
@@ -367,7 +356,6 @@ namespace StaticCodeAnalyzer
                 }
             }
 
-            // Фильтр по файлу
             if (!string.IsNullOrWhiteSpace(FilterFile.Text))
             {
                 if (!issue.FilePath.Contains(FilterFile.Text, StringComparison.OrdinalIgnoreCase))

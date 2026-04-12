@@ -10,20 +10,21 @@ namespace StaticCodeAnalyzer.Services
         private static readonly string _logDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Logs");
         private static readonly int _maxDaysToKeep = 30;
 
+        public enum LogLevel
+        {
+            Info,
+            Warning,
+            Error
+        }
+
         static Logger()
         {
-            // Создаёт папку для логов, если её нет
             if (!Directory.Exists(_logDirectory))
                 Directory.CreateDirectory(_logDirectory);
-
-            // Удаляет старые файлы логов
             CleanOldLogs();
         }
 
-        /// Записывает действие пользователя в лог-файл.
-        /// <param name="action">Описание действия (например, "OpenFile", "Analyze")</param>
-        /// <param name="details">Дополнительные детали (путь, количество найденных проблем и т.п.)</param>
-        public static void Log(string action, string details = null)
+        public static void Log(string action, string details = null, LogLevel level = LogLevel.Info)
         {
             try
             {
@@ -32,7 +33,7 @@ namespace StaticCodeAnalyzer.Services
 
                 string userName = Environment.UserName;
                 string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
-                string logEntry = $"[{timestamp}] Пользователь: {userName} | Действие: {action}";
+                string logEntry = $"[{timestamp}] {level} | Пользователь: {userName} | Действие: {action}";
 
                 if (!string.IsNullOrWhiteSpace(details))
                     logEntry += $" | {details}";
@@ -44,12 +45,9 @@ namespace StaticCodeAnalyzer.Services
             }
             catch (Exception ex)
             {
-                // Нельзя допустить, чтобы ошибка логирования нарушила работу приложения
                 System.Diagnostics.Debug.WriteLine($"Ошибка логирования: {ex.Message}");
             }
         }
-
-        /// Удаляет файлы логов, созданные более <see cref="_maxDaysToKeep"/> дней назад.
 
         private static void CleanOldLogs()
         {

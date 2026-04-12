@@ -13,6 +13,7 @@ namespace StaticCodeAnalyzer.Analysis
         public string ProjectPath { get; }
         public List<string> SourceFiles { get; }
         public CSharpCompilation Compilation { get; private set; }
+        private readonly Dictionary<string, SemanticModel> _semanticModelCache = new();
 
         private ProjectContext(string projectPath, List<string> sourceFiles, CSharpCompilation compilation)
         {
@@ -44,6 +45,46 @@ namespace StaticCodeAnalyzer.Analysis
             return new ProjectContext(projectPath, sourceFiles, compilation);
         }
 
+        public async Task<SemanticModel> GetSemanticModelAsync(string filePath, CancellationToken ct = default)
+        {
+            lock (_semanticModelCache)
+            {
+                if (_semanticModelCache.TryGetValue(filePath, out var cached))
+                    return cached;
+            }
+
+            var tree = Compilation.SyntaxTrees.FirstOrDefault(t => t.FilePath == filePath);
+            if (tree == null)
+                throw new FileNotFoundException($"SyntaxTree not found for {filePath}");
+
+            var model = Compilation.GetSemanticModel(tree);
+            lock (_semanticModelCache)
+            {
+                _semanticModelCache[filePath] = model;
+            }
+            return await Task.FromResult(model);
+        }
+
+        public async Task UpdateFileAsync(string filePath, string newCode, CancellationToken cancellationToken = default)
+        {
+            var newTree = CSharpSyntaxTree.ParseText(newCode, path: filePath);
+            var oldTree = Compilation.SyntaxTrees.FirstOrDefault(t => t.FilePath == filePath);
+            if (oldTree != null)
+            {
+                Compilation = Compilation.ReplaceSyntaxTree(oldTree, newTree);
+                lock (_semanticModelCache)
+                {
+                    _semanticModelCache.Remove(filePath);
+                }
+            }
+            else
+            {
+                Compilation = Compilation.AddSyntaxTrees(newTree);
+                SourceFiles.Add(filePath);
+            }
+            await Task.CompletedTask;
+        }
+
         private static IEnumerable<MetadataReference> GetDefaultMetadataReferences()
         {
             return new[]
@@ -57,22 +98,6 @@ namespace StaticCodeAnalyzer.Analysis
                 MetadataReference.CreateFromFile(typeof(System.Runtime.GCSettings).Assembly.Location),
                 MetadataReference.CreateFromFile(typeof(System.IO.Stream).Assembly.Location)
             };
-        }
-
-        public async Task UpdateFileAsync(string filePath, string newCode, CancellationToken cancellationToken = default)
-        {
-            var newTree = CSharpSyntaxTree.ParseText(newCode, path: filePath);
-            var oldTree = Compilation.SyntaxTrees.FirstOrDefault(t => t.FilePath == filePath);
-            if (oldTree != null)
-            {
-                Compilation = Compilation.ReplaceSyntaxTree(oldTree, newTree);
-            }
-            else
-            {
-                Compilation = Compilation.AddSyntaxTrees(newTree);
-                SourceFiles.Add(filePath);
-            }
-            await Task.CompletedTask;
         }
     }
 }

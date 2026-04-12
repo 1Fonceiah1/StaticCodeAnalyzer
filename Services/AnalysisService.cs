@@ -12,6 +12,7 @@ namespace StaticCodeAnalyzer.Services
     public class AnalysisService
     {
         private readonly AnalyzerEngine _engine;
+        public AnalyzerEngine Engine => _engine;
 
         public AnalysisService()
         {

@@ -2,6 +2,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Editing;
+using Microsoft.CodeAnalysis.FindSymbols;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -19,6 +20,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             var editor = await DocumentEditor.CreateAsync(document, cancellationToken).ConfigureAwait(false);
             bool changed = false;
             bool needsTaskUsing = false;
+            var solution = document.Project.Solution;
 
             var methods = root.DescendantNodes().OfType<MethodDeclarationSyntax>().ToList();
 
@@ -55,15 +57,26 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                     if (!newMethod.Modifiers.Any(SyntaxKind.AsyncKeyword))
                         newMethod = newMethod.AddModifiers(SyntaxFactory.Token(SyntaxKind.AsyncKeyword));
 
-                    // Корректирует возвращаемый тип ТОЛЬКО если метод уже возвращает Task/Task<T> или void
+                    // Корректирует возвращаемый тип
                     var returnTypeSymbol = semanticModel.GetTypeInfo(method.ReturnType, cancellationToken).Type;
                     if (returnTypeSymbol?.SpecialType == SpecialType.System_Void)
                     {
-                        // void → Task – меняем (это наименее опасно, но всё равно может сломать код)
-                        newMethod = newMethod.WithReturnType(SyntaxFactory.ParseTypeName("Task"));
+                        // Проверяем, можно ли безопасно изменить void → Task
+                        bool hasExternalReferences = await HasExternalReferencesAsync(method, semanticModel, solution, cancellationToken).ConfigureAwait(false);
+                        if (!hasExternalReferences)
+                        {
+                            newMethod = newMethod.WithReturnType(SyntaxFactory.ParseTypeName("Task"));
+                        }
+                        else
+                        {
+                            var warningComment = SyntaxFactory.TriviaList(
+                                SyntaxFactory.Comment("// ВНИМАНИЕ: метод содержит Thread.Sleep, но его возвращаемый тип не изменён из-за внешних вызовов. Измените вручную на Task."),
+                                SyntaxFactory.CarriageReturnLineFeed);
+                            newMethod = newMethod.WithLeadingTrivia(warningComment);
+                        }
                     }
-                    else if (returnTypeSymbol != null && 
-                             returnTypeSymbol.Name != "Task" && 
+                    else if (returnTypeSymbol != null &&
+                             returnTypeSymbol.Name != "Task" &&
                              !returnTypeSymbol.Name.StartsWith("Task`"))
                     {
                         // Не-Task и не-void – не меняем автоматически, только выдаём предупреждение через комментарий
@@ -72,14 +85,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                             SyntaxFactory.CarriageReturnLineFeed);
                         newMethod = newMethod.WithLeadingTrivia(warningComment);
                     }
-                    else
-                    {
-                        // Уже Task или Task<T> – оборачиваем в async Task (если нужно)
-                        if (returnTypeSymbol.Name.StartsWith("Task`"))
-                        {
-                            // Если Task<T>, оставляем как есть (await Task.Delay вернёт Task, но компилятор справится)
-                        }
-                    }
+                    // Если уже Task или Task<T> – оставляем как есть
 
                     editor.ReplaceNode(method, newMethod.NormalizeWhitespace());
                     changed = true;
@@ -110,6 +116,18 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             }
 
             return resultDoc;
+        }
+
+        private async Task<bool> HasExternalReferencesAsync(MethodDeclarationSyntax method, SemanticModel semanticModel, Solution solution, CancellationToken ct)
+        {
+            var methodSymbol = semanticModel.GetDeclaredSymbol(method, ct);
+            if (methodSymbol == null) return false;
+
+            var references = await SymbolFinder.FindReferencesAsync(methodSymbol, solution, ct).ConfigureAwait(false);
+            // Исключаем само объявление метода
+            var referencingLocations = references.SelectMany(r => r.Locations)
+                                                  .Where(loc => !loc.IsImplicit && loc.Location.SourceSpan != method.Span);
+            return referencingLocations.Any();
         }
     }
 }

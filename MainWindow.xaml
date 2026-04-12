@@ -5,10 +5,10 @@
         Title="Статический анализатор кода"
         Icon="Resources/icon.ico"
         Height="600" Width="1100"
+        MinWidth="1000" MinHeight="500"
         WindowStartupLocation="CenterScreen"
         Background="#2D2D2D">
     <Window.Resources>
-        <!-- (все ресурсы из этапа 4 остаются без изменений) -->
         <SolidColorBrush x:Key="PrimaryBackground" Color="#2D2D2D"/>
         <SolidColorBrush x:Key="SecondaryBackground" Color="#1E1E1E"/>
         <SolidColorBrush x:Key="AccentColor" Color="#D32F2F"/>
@@ -17,6 +17,7 @@
         <SolidColorBrush x:Key="WarningColor" Color="#FF9800"/>
         <SolidColorBrush x:Key="InfoColor" Color="#2196F3"/>
 
+        <!-- Стиль для заголовков столбцов DataGrid -->
         <Style TargetType="DataGridColumnHeader">
             <Setter Property="Background" Value="#3D3D3D"/>
             <Setter Property="Foreground" Value="{StaticResource TextColor}"/>
@@ -25,8 +26,13 @@
             <Setter Property="Height" Value="30"/>
             <Setter Property="HorizontalContentAlignment" Value="Center"/>
             <Setter Property="FontWeight" Value="Bold"/>
+            <!-- Кисть для подсветки при перетаскивании / выделении -->
+            <Style.Resources>
+                <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#D32F2F"/>
+            </Style.Resources>
         </Style>
 
+        <!-- Стиль для ячеек DataGrid -->
         <Style TargetType="DataGridCell">
             <Setter Property="Background" Value="{StaticResource SecondaryBackground}"/>
             <Setter Property="Foreground" Value="{StaticResource TextColor}"/>
@@ -47,6 +53,7 @@
             <Setter Property="Foreground" Value="{StaticResource TextColor}"/>
         </Style>
 
+        <!-- Стиль для TreeViewItem -->
         <Style TargetType="TreeViewItem">
             <Setter Property="Foreground" Value="{StaticResource TextColor}"/>
             <Setter Property="Background" Value="Transparent"/>
@@ -71,6 +78,7 @@
             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
         </Style>
 
+        <!-- Стиль для красной кнопки -->
         <Style x:Key="AnalyzerButton" TargetType="Button">
             <Setter Property="Background" Value="{StaticResource AccentColor}"/>
             <Setter Property="Foreground" Value="{StaticResource TextColor}"/>
@@ -99,6 +107,7 @@
             </Setter>
         </Style>
 
+        <!-- Стиль для серой кнопки -->
         <Style x:Key="GrayButton" TargetType="Button">
             <Setter Property="Background" Value="#555"/>
             <Setter Property="Foreground" Value="{StaticResource TextColor}"/>
@@ -127,6 +136,7 @@
             </Setter>
         </Style>
 
+        <!-- Стиль для ToggleButton (серая кнопка-переключатель) -->
         <Style x:Key="GrayToggleButton" TargetType="ToggleButton">
             <Setter Property="Background" Value="#555"/>
             <Setter Property="Foreground" Value="{StaticResource TextColor}"/>
@@ -157,11 +167,105 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <!-- Стиль для TextBox -->
+        <Style TargetType="TextBox">
+            <Setter Property="Background" Value="{StaticResource SecondaryBackground}"/>
+            <Setter Property="Foreground" Value="{StaticResource TextColor}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource AccentColor}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="FontFamily" Value="Consolas"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Padding" Value="3"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border x:Name="border"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="2">
+                            <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="BorderBrush" Value="#B71C1C"/>
+                            </Trigger>
+                            <Trigger Property="IsFocused" Value="True">
+                                <Setter TargetName="border" Property="BorderBrush" Value="#B71C1C"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Стиль для ComboBox -->
+        <Style TargetType="ComboBox">
+            <Setter Property="Background" Value="{StaticResource SecondaryBackground}"/>
+            <Setter Property="Foreground" Value="{StaticResource TextColor}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource AccentColor}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="FontFamily" Value="Consolas"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Padding" Value="3"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <ToggleButton x:Name="ToggleButton"
+                                          Background="{TemplateBinding Background}"
+                                          BorderBrush="{TemplateBinding BorderBrush}"
+                                          BorderThickness="{TemplateBinding BorderThickness}"
+                                          Focusable="False"
+                                          IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                          ClickMode="Press">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border x:Name="border"
+                                                Background="{TemplateBinding Background}"
+                                                BorderBrush="{TemplateBinding BorderBrush}"
+                                                BorderThickness="{TemplateBinding BorderThickness}"
+                                                CornerRadius="2">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition/>
+                                                    <ColumnDefinition Width="20"/>
+                                                </Grid.ColumnDefinitions>
+                                                <ContentPresenter Grid.Column="0" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="3,0,0,0"/>
+                                                <Path Grid.Column="1" Data="M0,0 L4,4 L8,0" Fill="{StaticResource TextColor}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Grid>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="border" Property="BorderBrush" Value="#B71C1C"/>
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+                            <Popup x:Name="Popup" Placement="Bottom" IsOpen="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}}"
+                                   AllowsTransparency="True" Focusable="False" PopupAnimation="Slide">
+                                <Border x:Name="DropDownBorder" Background="{StaticResource SecondaryBackground}" BorderBrush="{StaticResource AccentColor}" BorderThickness="1" CornerRadius="2">
+                                    <ScrollViewer CanContentScroll="True">
+                                        <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Contained"/>
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsFocused" Value="True">
+                                <Setter TargetName="ToggleButton" Property="BorderBrush" Value="#B71C1C"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
 
     <Grid Margin="10">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
@@ -170,7 +274,7 @@
 
         <!-- Верхняя панель с кнопками -->
         <Border Grid.Row="0" Background="{StaticResource SecondaryBackground}" CornerRadius="5" Margin="0,0,0,10" Padding="10">
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
+            <WrapPanel Orientation="Horizontal" HorizontalAlignment="Left">
                 <Button Content="Открыть файл" Width="100" Height="30" Margin="0,0,10,0"
                         Click="OpenFile_Click" Style="{StaticResource AnalyzerButton}"/>
                 <Button Content="Открыть папку" Width="100" Height="30" Margin="0,0,10,0"
@@ -184,18 +288,12 @@
                 <ToggleButton x:Name="ToggleTreePanel" Content="Скрыть дерево" Width="100" Height="30"
                               Checked="ToggleTreePanel_Checked" Unchecked="ToggleTreePanel_Unchecked"
                               Style="{StaticResource GrayToggleButton}"/>
-                <Button x:Name="CancelButton" Content="Отмена" Width="80" Height="30" Margin="10,0,0,0"
-                        Click="CancelButton_Click" IsEnabled="False" Style="{StaticResource GrayButton}"/>
-            </StackPanel>
+            </WrapPanel>
         </Border>
 
-        <!-- Прогресс-бар -->
-        <ProgressBar Grid.Row="1" x:Name="ProgressBar" Height="20" Margin="0,0,0,10" Visibility="Collapsed" 
-                     IsIndeterminate="False" Foreground="{StaticResource AccentColor}" Background="#3D3D3D"/>
-
         <!-- Панель фильтров -->
-        <Border Grid.Row="2" Background="{StaticResource SecondaryBackground}" CornerRadius="5" Margin="0,0,0,10" Padding="5">
-            <StackPanel Orientation="Horizontal" Margin="5">
+        <Border Grid.Row="1" Background="{StaticResource SecondaryBackground}" CornerRadius="5" Margin="0,0,0,10" Padding="5">
+            <WrapPanel Orientation="Horizontal" Margin="5">
                 <TextBlock Text="Фильтр:" Foreground="{StaticResource TextColor}" VerticalAlignment="Center" Margin="0,0,5,0"/>
                 <ComboBox x:Name="FilterSeverity" Width="100" Margin="0,0,10,0" SelectionChanged="Filter_Changed">
                     <ComboBoxItem Content="Все" IsSelected="True"/>
@@ -209,11 +307,11 @@
                 <TextBox x:Name="FilterFile" Width="200" Margin="0,0,10,0" TextChanged="Filter_Changed"
                          Foreground="{StaticResource TextColor}" Background="#1E1E1E" BorderBrush="#D32F2F"/>
                 <Button Content="Сбросить" Width="80" Click="ResetFilter_Click" Style="{StaticResource GrayButton}"/>
-            </StackPanel>
+            </WrapPanel>
         </Border>
 
         <!-- Основная область -->
-        <Grid Grid.Row="3">
+        <Grid Grid.Row="2">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition x:Name="TreeColumn" Width="250"/>
                 <ColumnDefinition Width="*"/>
@@ -258,23 +356,23 @@
                             </DataGrid.Resources>
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="Важность" Binding="{Binding Severity}" 
-                                                    Width="Auto" IsReadOnly="True" MinWidth="70"/>
+                                                    Width="Auto" MaxWidth="150" MinWidth="80" IsReadOnly="True"/>
                                 <DataGridTextColumn Header="Код" Binding="{Binding Code}" 
-                                                    Width="Auto" IsReadOnly="True" MinWidth="70"/>
+                                                    Width="Auto" MaxWidth="120" MinWidth="70" IsReadOnly="True"/>
                                 <DataGridTextColumn Header="Файл" Binding="{Binding FilePath}" 
-                                                    Width="Auto" IsReadOnly="True" MinWidth="150"/>
+                                                    Width="Auto" MaxWidth="300" MinWidth="150" IsReadOnly="True"/>
                                 <DataGridTextColumn Header="Класс" Binding="{Binding ContainingTypeName}" 
-                                                    Width="Auto" IsReadOnly="True" MinWidth="120"/>
+                                                    Width="Auto" MaxWidth="200" MinWidth="100" IsReadOnly="True"/>
                                 <DataGridTextColumn Header="Метод" Binding="{Binding MethodName}" 
-                                                    Width="Auto" IsReadOnly="True" MinWidth="120"/>
+                                                    Width="Auto" MaxWidth="200" MinWidth="100" IsReadOnly="True"/>
                                 <DataGridTextColumn Header="Строка" Binding="{Binding LineNumber}" 
-                                                    Width="Auto" IsReadOnly="True" MinWidth="50"/>
+                                                    Width="Auto" MaxWidth="80" MinWidth="60" IsReadOnly="True"/>
                                 <DataGridTextColumn Header="Тип" Binding="{Binding Type}" 
-                                                    Width="Auto" IsReadOnly="True" MinWidth="80"/>
+                                                    Width="Auto" MaxWidth="120" MinWidth="80" IsReadOnly="True"/>
                                 <DataGridTextColumn Header="Описание" Binding="{Binding Description}" 
-                                                    Width="Auto" IsReadOnly="True" MinWidth="200"/>
+                                                    Width="Auto" MaxWidth="400" MinWidth="200" IsReadOnly="True"/>
                                 <DataGridTextColumn Header="Предложение" Binding="{Binding Suggestion}" 
-                                                    Width="Auto" IsReadOnly="True" MinWidth="200"/>
+                                                    Width="Auto" MaxWidth="400" MinWidth="200" IsReadOnly="True"/>
                             </DataGrid.Columns>
                         </DataGrid>
                     </ScrollViewer>
@@ -283,7 +381,7 @@
         </Grid>
 
         <!-- Строка статуса -->
-        <StatusBar Grid.Row="4" Background="{StaticResource SecondaryBackground}" Margin="0,10,0,0" Padding="5">
+        <StatusBar Grid.Row="3" Background="{StaticResource SecondaryBackground}" Margin="0,10,0,0" Padding="5">
             <TextBlock x:Name="StatusText" Foreground="{StaticResource TextColor}" Text="Готов"/>
         </StatusBar>
     </Grid>

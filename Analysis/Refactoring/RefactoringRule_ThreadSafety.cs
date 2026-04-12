@@ -59,8 +59,8 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                 // Находит публичные не-async методы, использующие изменяемые поля
                 var methods = classDecl.Members
                     .OfType<MethodDeclarationSyntax>()
-                    .Where(m => m.Modifiers.Any(SyntaxKind.PublicKeyword) && 
-                               m.Body != null && 
+                    .Where(m => m.Modifiers.Any(SyntaxKind.PublicKeyword) &&
+                               m.Body != null &&
                                !m.Modifiers.Any(SyntaxKind.AsyncKeyword));
 
                 foreach (var method in methods)
@@ -86,7 +86,24 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             return changed ? editor.GetChangedDocument() : document;
         }
 
-        private bool IsAlreadyLocked(MethodDeclarationSyntax method) =>
-            method.Body?.Statements.FirstOrDefault() is LockStatementSyntax;
+        private bool IsAlreadyLocked(MethodDeclarationSyntax method)
+        {
+            if (method.Body == null) return false;
+
+            // Проверяем наличие любого lock-оператора в теле
+            var lockNodes = method.Body.DescendantNodes().OfType<LockStatementSyntax>();
+            if (lockNodes.Any())
+                return true;
+
+            // Проверяем вызовы Monitor.Enter и подобные
+            var monitorCalls = method.Body.DescendantNodes().OfType<InvocationExpressionSyntax>()
+                .Where(inv => inv.Expression is MemberAccessExpressionSyntax ma &&
+                              ma.Expression.ToString() == "Monitor" &&
+                              (ma.Name.Identifier.Text == "Enter" || ma.Name.Identifier.Text == "TryEnter"));
+            if (monitorCalls.Any())
+                return true;
+
+            return false;
+        }
     }
 }

@@ -8,12 +8,14 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using StaticCodeAnalyzer.Models;
+using StaticCodeAnalyzer.Services;
 
 namespace StaticCodeAnalyzer.Analysis
 {
     public class AnalyzerEngine
     {
         private readonly List<IAnalyzerRule> _rules;
+        public List<RuleError> LastErrors { get; private set; } = new();
 
         public AnalyzerEngine()
         {
@@ -34,7 +36,7 @@ namespace StaticCodeAnalyzer.Analysis
                 new PoorLocalVariableNameRule(),
                 new DuplicateMethodCallsRule(),
                 new ConsoleOutputInBusinessLogicRule(),
-                new DeadCodeRule()                      // <-- добавлено
+                new DeadCodeRule()
             };
         }
 
@@ -57,6 +59,7 @@ namespace StaticCodeAnalyzer.Analysis
             var issues = new List<AnalysisIssue>();
             var files = filesToAnalyze?.ToList() ?? context.SourceFiles;
             var compilation = context.Compilation;
+            LastErrors.Clear();
 
             int total = files.Count;
             int processed = 0;
@@ -80,7 +83,8 @@ namespace StaticCodeAnalyzer.Analysis
                     }
                     catch (Exception ex)
                     {
-                        System.Diagnostics.Debug.WriteLine($"Rule {rule.GetType().Name} failed on {filePath}: {ex.Message}");
+                        LastErrors.Add(new RuleError(rule.GetType().Name, filePath, ex.Message));
+                        Logger.Log("RuleError", $"{rule.GetType().Name} on {filePath}: {ex.Message}", Logger.LogLevel.Error);
                     }
                 }
 
@@ -90,4 +94,6 @@ namespace StaticCodeAnalyzer.Analysis
             return issues;
         }
     }
+
+    public record RuleError(string RuleName, string FilePath, string ErrorMessage);
 }

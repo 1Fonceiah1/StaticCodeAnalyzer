@@ -7,42 +7,47 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using StaticCodeAnalyzer.Analysis.Refactoring;
+using StaticCodeAnalyzer.Services;
 
 namespace StaticCodeAnalyzer.Analysis
 {
     public class RefactoringEngine
     {
         private readonly List<IRefactoringRule> _rules;
+        private readonly AdhocWorkspace _workspace;
+        private readonly object _workspaceLock = new();
 
         public RefactoringEngine()
         {
             _rules = new List<IRefactoringRule>
             {
-                // Простые замены (не меняют структуру)
                 new RefactoringRule_EmptyCatchBlock(),
                 new RefactoringRule_MagicNumbers(),
-                new RefactoringRule_SimplifyDeadCode(),          // <-- добавлено
+                new RefactoringRule_SimplifyDeadCode(),
                 new RefactoringRule_FixUndefinedIdentifier(),
-                
-                // Переименования (до инкапсуляции)
                 new RefactoringRule_NamingConvention(),
                 new RefactoringRule_RenameLocalVariables(),
-                
-                // Структурные изменения
                 new RefactoringRule_EncapsulateFields(),
                 new RefactoringRule_DisposableFields(),
                 new RefactoringRule_ThreadSafety(),
-                
-                // Оптимизации и рефакторинг
                 new RefactoringRule_RemoveDuplicates(),
                 new RefactoringRule_RemoveDuplicateCalls(),
                 new RefactoringRule_SeparateOutput(),
                 new RefactoringRule_SplitMethodByResponsibility(),
-                
-                // Асинхронность (в конце, меняет сигнатуры)
                 new RefactoringRule_AsyncAwait(),
                 new RefactoringRule_UnusedVariable()
             };
+
+            _workspace = new AdhocWorkspace();
+            var projectInfo = ProjectInfo.Create(
+                ProjectId.CreateNewId(),
+                VersionStamp.Create(),
+                "RefactoringProject",
+                "RefactoringProject",
+                LanguageNames.CSharp)
+                .WithMetadataReferences(GetDefaultMetadataReferences())
+                .WithCompilationOptions(new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+            _workspace.AddProject(projectInfo);
         }
 
         public HashSet<string> GetFixableIssueCodes()
@@ -63,7 +68,7 @@ namespace StaticCodeAnalyzer.Analysis
                 "UND001",
                 "THR001",
                 "CPX001",
-                "DEAD001", "SIM001", "DEAD002", "DEAD003", "DEAD004"       // <-- добавлены коды для DeadCode
+                "DEAD001", "SIM001", "DEAD002", "DEAD003", "DEAD004"
             };
         }
 
@@ -79,19 +84,20 @@ namespace StaticCodeAnalyzer.Analysis
             CancellationToken cancellationToken = default,
             IProgress<int> progress = null)
         {
-            var workspace = new AdhocWorkspace();
-            var projectInfo = ProjectInfo.Create(
-                ProjectId.CreateNewId(),
-                VersionStamp.Create(),
-                "TempProject",
-                "TempProject",
-                LanguageNames.CSharp)
-                .WithMetadataReferences(GetDefaultMetadataReferences())
-                .WithCompilationOptions(new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+            lock (_workspaceLock)
+            {
+                var project = _workspace.CurrentSolution.Projects.First();
+                var existingDoc = project.Documents.FirstOrDefault();
+                if (existingDoc != null)
+                {
+                    var newSolution = _workspace.CurrentSolution.RemoveDocument(existingDoc.Id);
+                    _workspace.TryApplyChanges(newSolution);
+                }
+            }
 
-            var project = workspace.AddProject(projectInfo);
-            var document = workspace.AddDocument(project.Id, "TempDocument.cs", SourceText.From(code));
+            var document = _workspace.AddDocument(_workspace.CurrentSolution.Projects.First().Id, "TempDocument.cs", SourceText.From(code));
             var errors = new List<string>();
+            bool anyChange = false;
 
             var rulesToApply = _rules;
             if (allowedRuleCodes != null && allowedRuleCodes.Any())
@@ -112,17 +118,21 @@ namespace StaticCodeAnalyzer.Analysis
                     if (newDocument != document)
                     {
                         document = newDocument;
+                        anyChange = true;
                     }
                 }
                 catch (Exception ex)
                 {
                     errors.Add($"Ошибка в {rule.GetType().Name}: {ex.Message}");
-                    return (code, false, errors);
+                    Logger.Log("RefactoringError", $"{rule.GetType().Name}: {ex.Message}", Logger.LogLevel.Error);
                 }
 
                 processed++;
                 progress?.Report((processed * 100) / total);
             }
+
+            if (!anyChange && errors.Any())
+                return (code, false, errors);
 
             var finalRoot = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
             if (finalRoot != null)
