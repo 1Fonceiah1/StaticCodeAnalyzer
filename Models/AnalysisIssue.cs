@@ -11,5 +11,9 @@ namespace StaticCodeAnalyzer.Models
         public string Description { get; set; }
         public string Suggestion { get; set; }
         public string RuleName { get; set; }
+
+        // Новые поля для навигации
+        public string ContainingTypeName { get; set; }
+        public string MethodName { get; set; }
     }
 }

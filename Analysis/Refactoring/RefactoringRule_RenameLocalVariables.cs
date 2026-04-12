@@ -1,5 +1,4 @@
 using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Rename;
 using System.Collections.Generic;
@@ -27,59 +26,101 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             var solution = document.Project.Solution;
             bool changed = false;
 
+            // Сначала собираем все переменные, которые требуют переименования
             var localVars = root.DescendantNodes()
                 .OfType<VariableDeclaratorSyntax>()
                 .Where(v => v.Parent is VariableDeclarationSyntax decl && decl.Parent is LocalDeclarationStatementSyntax)
+                .Select(v => new { Syntax = v, Symbol = semanticModel.GetDeclaredSymbol(v, cancellationToken) })
+                .Where(x => x.Symbol != null && PoorNames.Contains(x.Symbol.Name))
                 .ToList();
 
-            foreach (var variable in localVars)
+            // Группируем по методу, чтобы обрабатывать каждый метод отдельно
+            var methodGroups = localVars.GroupBy(x => x.Syntax.FirstAncestorOrSelf<MethodDeclarationSyntax>());
+
+            foreach (var group in methodGroups)
             {
-                var symbol = semanticModel.GetDeclaredSymbol(variable, cancellationToken);
-                if (symbol == null) continue;
+                var method = group.Key;
+                if (method == null) continue;
 
-                var currentName = symbol.Name;
-                if (!PoorNames.Contains(currentName)) continue;
+                // Собираем все имена, которые уже заняты в этом методе (параметры + локальные переменные)
+                var usedNames = new HashSet<string>();
+                // Параметры метода
+                foreach (var p in method.ParameterList.Parameters)
+                    usedNames.Add(p.Identifier.Text);
+                // Все локальные переменные (включая те, которые не будем переименовывать)
+                foreach (var v in method.DescendantNodes().OfType<VariableDeclaratorSyntax>())
+                {
+                    var sym = semanticModel.GetDeclaredSymbol(v, cancellationToken);
+                    if (sym != null)
+                        usedNames.Add(sym.Name);
+                }
 
-                var newName = SuggestBetterName(variable, semanticModel, cancellationToken);
-                if (string.IsNullOrEmpty(newName) || newName == currentName) continue;
+                // Для каждой переменной в группе генерируем уникальное имя
+                var renameMap = new Dictionary<ISymbol, string>();
+                foreach (var item in group)
+                {
+                    string suggested = SuggestBetterName(item.Syntax, semanticModel, cancellationToken);
+                    if (string.IsNullOrEmpty(suggested)) continue;
 
-                // Проверка: нет ли конфликта имён в текущей области
-                var method = variable.FirstAncestorOrSelf<MethodDeclarationSyntax>();
-                if (method != null && HasNameConflict(newName, method, semanticModel, cancellationToken))
-                    continue;
+                    string unique = suggested;
+                    int counter = 1;
+                    while (usedNames.Contains(unique))
+                    {
+                        unique = suggested + counter;
+                        counter++;
+                    }
+                    renameMap[item.Symbol] = unique;
+                    usedNames.Add(unique); // резервируем имя для следующих переменных
+                }
 
-                solution = await Renamer.RenameSymbolAsync(
-                    solution, 
-                    symbol, 
-                    new SymbolRenameOptions(), 
-                    newName, 
-                    cancellationToken);
-                changed = true;
+                // Применяем переименования
+                foreach (var kv in renameMap)
+                {
+                    solution = await Renamer.RenameSymbolAsync(solution, kv.Key, new SymbolRenameOptions(), kv.Value, cancellationToken);
+                    changed = true;
+                }
             }
 
             return changed ? solution.GetDocument(document.Id) : document;
         }
 
-        private string SuggestBetterName(VariableDeclaratorSyntax variable, SemanticModel semanticModel, CancellationToken ct)
+        private string SuggestBetterName(VariableDeclaratorSyntax variable, SemanticModel model, CancellationToken ct)
         {
-            // Счётчик цикла
-            if (variable.FirstAncestorOrSelf<ForStatementSyntax>() != null)
+            string name = variable.Identifier.Text;
+            var declaration = variable.Parent as VariableDeclarationSyntax;
+            var typeSyntax = declaration?.Type;
+
+            // Счётчик цикла for
+            if (declaration?.Parent is ForStatementSyntax)
                 return "index";
 
-            // Элемент коллекции
-            if (variable.FirstAncestorOrSelf<ForEachStatementSyntax>() != null)
+            // Итератор foreach
+            if (declaration?.Parent is ForEachStatementSyntax)
                 return "item";
 
+            // По имени переменной
+            if (name == "i" || name == "j" || name == "k")
+                return "counter";
+            if (name == "s")
+                return "sum";
+            if (name == "len")
+                return "length";
+
             // По типу
-            var decl = variable.Parent as VariableDeclarationSyntax;
-            if (decl?.Type != null)
+            if (typeSyntax != null)
             {
-                var typeName = decl.Type.ToString().ToLowerInvariant();
-                if (typeName.Contains("int") || typeName.Contains("long")) return "number";
-                if (typeName.Contains("string")) return "text";
-                if (typeName.Contains("list") || typeName.Contains("array") || typeName.Contains("ienumerable")) return "items";
-                if (typeName.Contains("bool")) return "flag";
-                if (typeName.Contains("datetime")) return "timestamp";
+                var typeInfo = model.GetTypeInfo(typeSyntax, ct);
+                var type = typeInfo.Type;
+                if (type != null)
+                {
+                    if (type.SpecialType == Microsoft.CodeAnalysis.SpecialType.System_Int32 ||
+                        type.SpecialType == Microsoft.CodeAnalysis.SpecialType.System_Int64)
+                        return "number";
+                    if (type.SpecialType == Microsoft.CodeAnalysis.SpecialType.System_String)
+                        return "text";
+                    if (type.TypeKind == Microsoft.CodeAnalysis.TypeKind.Array)
+                        return "array";
+                }
             }
 
             // По инициализатору
@@ -89,18 +130,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                 if (lit.Token.Value is string) return "message";
             }
 
-            // Результат вызова метода
-            if (variable.Initializer?.Value is InvocationExpressionSyntax)
-                return "result";
-
-            return "local";
-        }
-
-        private bool HasNameConflict(string newName, MethodDeclarationSyntax method, SemanticModel model, CancellationToken ct)
-        {
-            return method.DescendantNodes()
-                .OfType<IdentifierNameSyntax>()
-                .Any(id => id.Identifier.Text == newName && model.GetSymbolInfo(id, ct).Symbol != null);
+            return "localVar";
         }
     }
 }

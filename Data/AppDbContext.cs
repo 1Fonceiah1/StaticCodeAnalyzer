@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using StaticCodeAnalyzer.Models;
+using System.IO;
 
 namespace StaticCodeAnalyzer.Data
 {
@@ -14,7 +16,15 @@ namespace StaticCodeAnalyzer.Data
 
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
-            optionsBuilder.UseNpgsql("Host=localhost;Database=StaticAnalyzer;Username=postgres;Password=3457");
+            if (!optionsBuilder.IsConfigured)
+            {
+                var configuration = new ConfigurationBuilder()
+                    .SetBasePath(Directory.GetCurrentDirectory())
+                    .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+                    .Build();
+                var connectionString = configuration.GetConnectionString("DefaultConnection");
+                optionsBuilder.UseNpgsql(connectionString);
+            }
         }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)

@@ -1,7 +1,6 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
-using Microsoft.CodeAnalysis.Editing;
 using Microsoft.CodeAnalysis.Rename;
 using System.Linq;
 using System.Threading;
@@ -11,6 +10,8 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 {
     public class RefactoringRule_NamingConvention : IRefactoringRule
     {
+        public IEnumerable<string> TargetIssueCodes => new[] { "NAM001", "NAM002" };
+
         public async Task<Document> ApplyAsync(Document document, CancellationToken cancellationToken)
         {
             var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
@@ -25,14 +26,12 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                 var symbol = semanticModel.GetDeclaredSymbol(method, cancellationToken);
                 if (symbol == null) continue;
                 
-                // Пропускает переопределённые методы и явные реализации интерфейсов
                 if (symbol.IsOverride || symbol.ExplicitInterfaceImplementations.Any()) continue;
                 
                 string current = symbol.Name;
                 if (!IsPascalCase(current))
                 {
                     string target = ToPascalCase(current);
-                    // Проверяет, нет ли конфликта имён
                     var containingType = method.FirstAncestorOrSelf<TypeDeclarationSyntax>();
                     if (containingType != null && HasNameConflict(target, containingType, semanticModel, cancellationToken))
                         continue;

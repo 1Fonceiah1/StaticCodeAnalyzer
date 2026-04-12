@@ -26,69 +26,141 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                 var classSymbol = semanticModel.GetDeclaredSymbol(classDecl, cancellationToken);
                 if (classSymbol == null) continue;
 
-                // Проверка: уже реализует IDisposable?
+                // Уже реализует IDisposable?
                 bool alreadyImplements = classSymbol.Interfaces.Any(i => i.Name == "IDisposable") ||
                                          classSymbol.AllInterfaces.Any(i => i.Name == "IDisposable");
                 if (alreadyImplements) continue;
 
-                var disposableFields = classDecl.DescendantNodes()
-                    .OfType<FieldDeclarationSyntax>()
-                    .SelectMany(f => f.Declaration.Variables.Select(v => new { Field = f, Variable = v }))
-                    .Where(x => IsDisposable(x.Variable, semanticModel, cancellationToken))
-                    .ToList();
-
-                if (!disposableFields.Any()) continue;
-
-                // Добавляет IDisposable в базовые типы
-                if (classDecl.BaseList == null || !classDecl.BaseList.Types.Any(t => t.Type.ToString().Contains("IDisposable")))
+                // Собираем поля, реализующие IDisposable
+                var disposableFieldsInfo = new List<DisposableFieldInfo>();
+                foreach (var fieldDecl in classDecl.DescendantNodes().OfType<FieldDeclarationSyntax>())
                 {
-                    var baseList = classDecl.BaseList ?? SyntaxFactory.BaseList();
-                    baseList = baseList.AddTypes(SyntaxFactory.SimpleBaseType(SyntaxFactory.ParseTypeName("System.IDisposable")));
-                    editor.ReplaceNode(classDecl, classDecl.WithBaseList(baseList));
-                    changed = true;
+                    foreach (var variable in fieldDecl.Declaration.Variables)
+                    {
+                        if (IsDisposable(variable, semanticModel, cancellationToken))
+                        {
+                            disposableFieldsInfo.Add(new DisposableFieldInfo
+                            {
+                                FieldDeclaration = fieldDecl,
+                                Variable = variable
+                            });
+                        }
+                    }
                 }
 
-                // Генерирует Dispose, если его нет
+                if (!disposableFieldsInfo.Any()) continue;
+
+                // Проверяем, есть ли уже метод Dispose()
                 if (classSymbol.GetMembers("Dispose").OfType<IMethodSymbol>().Any(m => m.Parameters.Length == 0))
                     continue;
 
-                var disposeBody = SyntaxFactory.Block();
-                foreach (var field in disposableFields)
+                // Создаём новый класс со всеми изменениями
+                ClassDeclarationSyntax newClass = classDecl;
+
+                // 1. Добавляем IDisposable к базовым типам
+                if (newClass.BaseList == null || !newClass.BaseList.Types.Any(t => t.Type.ToString().Contains("IDisposable")))
                 {
-                    var nullCheck = SyntaxFactory.IfStatement(
-                        SyntaxFactory.BinaryExpression(SyntaxKind.NotEqualsExpression,
-                            SyntaxFactory.IdentifierName(field.Variable.Identifier),
-                            SyntaxFactory.LiteralExpression(SyntaxKind.NullLiteralExpression)),
-                        SyntaxFactory.Block(
-                            SyntaxFactory.ExpressionStatement(
-                                SyntaxFactory.InvocationExpression(
-                                    SyntaxFactory.MemberAccessExpression(
-                                        SyntaxKind.SimpleMemberAccessExpression,
-                                        SyntaxFactory.IdentifierName(field.Variable.Identifier),
-                                        SyntaxFactory.IdentifierName("Dispose"))))));
-                    disposeBody = disposeBody.AddStatements(nullCheck);
+                    var baseList = newClass.BaseList ?? SyntaxFactory.BaseList();
+                    baseList = baseList.AddTypes(SyntaxFactory.SimpleBaseType(SyntaxFactory.ParseTypeName("System.IDisposable")));
+                    newClass = newClass.WithBaseList(baseList);
                 }
 
-                var suppressFinalize = SyntaxFactory.ExpressionStatement(
-                    SyntaxFactory.InvocationExpression(
-                        SyntaxFactory.MemberAccessExpression(
-                            SyntaxKind.SimpleMemberAccessExpression,
-                            SyntaxFactory.IdentifierName("GC"),
-                            SyntaxFactory.IdentifierName("SuppressFinalize")),
-                        SyntaxFactory.ArgumentList(SyntaxFactory.SingletonSeparatedList(
-                            SyntaxFactory.Argument(SyntaxFactory.ThisExpression())))));
+                // 2. Добавляем поле _disposed
+                var disposedField = SyntaxFactory.FieldDeclaration(
+                        SyntaxFactory.VariableDeclaration(
+                            SyntaxFactory.ParseTypeName("bool"),
+                            SyntaxFactory.SingletonSeparatedList(
+                                SyntaxFactory.VariableDeclarator("_disposed")
+                                    .WithInitializer(SyntaxFactory.EqualsValueClause(
+                                        SyntaxFactory.LiteralExpression(SyntaxKind.FalseLiteralExpression))))))
+                    .WithModifiers(SyntaxFactory.TokenList(SyntaxFactory.Token(SyntaxKind.PrivateKeyword)))
+                    .NormalizeWhitespace();
+                newClass = newClass.AddMembers(disposedField);
 
-                var disposeMethod = SyntaxFactory.MethodDeclaration(
+                // 3. Генерируем Dispose(bool disposing)
+                var disposeBoolBody = GenerateDisposeBoolBody(disposableFieldsInfo);
+                var disposeBoolMethod = SyntaxFactory.MethodDeclaration(
+                        SyntaxFactory.PredefinedType(SyntaxFactory.Token(SyntaxKind.VoidKeyword)), "Dispose")
+                    .WithModifiers(SyntaxFactory.TokenList(
+                        SyntaxFactory.Token(SyntaxKind.ProtectedKeyword),
+                        SyntaxFactory.Token(SyntaxKind.VirtualKeyword)))
+                    .WithParameterList(SyntaxFactory.ParameterList(
+                        SyntaxFactory.SingletonSeparatedList(
+                            SyntaxFactory.Parameter(SyntaxFactory.Identifier("disposing"))
+                                .WithType(SyntaxFactory.PredefinedType(SyntaxFactory.Token(SyntaxKind.BoolKeyword))))))
+                    .WithBody(disposeBoolBody)
+                    .NormalizeWhitespace();
+                newClass = newClass.AddMembers(disposeBoolMethod);
+
+                // 4. Генерируем публичный Dispose()
+                var publicDisposeBody = SyntaxFactory.Block(
+                    SyntaxFactory.ExpressionStatement(
+                        SyntaxFactory.InvocationExpression(
+                            SyntaxFactory.IdentifierName("Dispose"),
+                            SyntaxFactory.ArgumentList(
+                                SyntaxFactory.SingletonSeparatedList(
+                                    SyntaxFactory.Argument(SyntaxFactory.LiteralExpression(SyntaxKind.TrueLiteralExpression)))))),
+                    SyntaxFactory.ExpressionStatement(
+                        SyntaxFactory.InvocationExpression(
+                            SyntaxFactory.MemberAccessExpression(
+                                SyntaxKind.SimpleMemberAccessExpression,
+                                SyntaxFactory.IdentifierName("GC"),
+                                SyntaxFactory.IdentifierName("SuppressFinalize")),
+                            SyntaxFactory.ArgumentList(
+                                SyntaxFactory.SingletonSeparatedList(
+                                    SyntaxFactory.Argument(SyntaxFactory.ThisExpression()))))));
+                var publicDisposeMethod = SyntaxFactory.MethodDeclaration(
                         SyntaxFactory.PredefinedType(SyntaxFactory.Token(SyntaxKind.VoidKeyword)), "Dispose")
                     .WithModifiers(SyntaxFactory.TokenList(SyntaxFactory.Token(SyntaxKind.PublicKeyword)))
-                    .WithBody(disposeBody.AddStatements(suppressFinalize))
+                    .WithBody(publicDisposeBody)
                     .NormalizeWhitespace();
+                newClass = newClass.AddMembers(publicDisposeMethod);
 
-                editor.AddMember(classDecl, disposeMethod);
+                // Заменяем старый класс новым (одна операция)
+                editor.ReplaceNode(classDecl, newClass);
                 changed = true;
             }
 
             return changed ? editor.GetChangedDocument() : document;
+        }
+
+        private BlockSyntax GenerateDisposeBoolBody(List<DisposableFieldInfo> disposableFields)
+        {
+            var statements = new List<StatementSyntax>();
+
+            // if (_disposed) return;
+            statements.Add(SyntaxFactory.IfStatement(
+                SyntaxFactory.IdentifierName("_disposed"),
+                SyntaxFactory.ReturnStatement()));
+
+            // if (disposing) { ... }
+            var disposingBlockStatements = new List<StatementSyntax>();
+            foreach (var field in disposableFields)
+            {
+                disposingBlockStatements.Add(SyntaxFactory.IfStatement(
+                    SyntaxFactory.BinaryExpression(SyntaxKind.NotEqualsExpression,
+                        SyntaxFactory.IdentifierName(field.Variable.Identifier),
+                        SyntaxFactory.LiteralExpression(SyntaxKind.NullLiteralExpression)),
+                    SyntaxFactory.Block(
+                        SyntaxFactory.ExpressionStatement(
+                            SyntaxFactory.InvocationExpression(
+                                SyntaxFactory.MemberAccessExpression(
+                                    SyntaxKind.SimpleMemberAccessExpression,
+                                    SyntaxFactory.IdentifierName(field.Variable.Identifier),
+                                    SyntaxFactory.IdentifierName("Dispose")))))));
+            }
+            statements.Add(SyntaxFactory.IfStatement(
+                SyntaxFactory.IdentifierName("disposing"),
+                SyntaxFactory.Block(disposingBlockStatements)));
+
+            // _disposed = true;
+            statements.Add(SyntaxFactory.ExpressionStatement(
+                SyntaxFactory.AssignmentExpression(
+                    SyntaxKind.SimpleAssignmentExpression,
+                    SyntaxFactory.IdentifierName("_disposed"),
+                    SyntaxFactory.LiteralExpression(SyntaxKind.TrueLiteralExpression))));
+
+            return SyntaxFactory.Block(statements);
         }
 
         private bool IsDisposable(VariableDeclaratorSyntax variable, SemanticModel model, CancellationToken ct)
@@ -97,6 +169,12 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             if (symbol?.Type == null) return false;
             return symbol.Type.SpecialType == SpecialType.System_IDisposable ||
                    symbol.Type.Interfaces.Any(i => i.Name == "IDisposable");
+        }
+
+        private class DisposableFieldInfo
+        {
+            public FieldDeclarationSyntax FieldDeclaration { get; set; }
+            public VariableDeclaratorSyntax Variable { get; set; }
         }
     }
 }

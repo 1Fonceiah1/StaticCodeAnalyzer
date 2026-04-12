@@ -11,6 +11,8 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 {
     public class RefactoringRule_SplitMethodByResponsibility : IRefactoringRule
     {
+        public IEnumerable<string> TargetIssueCodes => new[] { "SPL001", "CPX001" };
+
         private const int MaxStatements = 15;
 
         public async Task<Document> ApplyAsync(Document document, CancellationToken cancellationToken)
@@ -26,6 +28,33 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 
             foreach (var method in methods)
             {
+                var classDecl = method.FirstAncestorOrSelf<ClassDeclarationSyntax>();
+                if (classDecl == null) continue;
+
+                // Проверяем, есть ли уже методы с именами ComputeValues/DisplayOutputs в этом классе
+                bool hasCompute = classDecl.Members
+                    .OfType<MethodDeclarationSyntax>()
+                    .Any(m => m.Identifier.Text == "ComputeValues");
+                bool hasDisplay = classDecl.Members
+                    .OfType<MethodDeclarationSyntax>()
+                    .Any(m => m.Identifier.Text == "DisplayOutputs");
+
+                // Проверяем, не вызывает ли уже метод ComputeValues() или DisplayOutputs()
+                bool alreadyHasComputeCall = method.Body.Statements
+                    .OfType<ExpressionStatementSyntax>()
+                    .Any(stmt => stmt.Expression is InvocationExpressionSyntax inv &&
+                                 inv.Expression is IdentifierNameSyntax id &&
+                                 id.Identifier.Text == "ComputeValues");
+                bool alreadyHasDisplayCall = method.Body.Statements
+                    .OfType<ExpressionStatementSyntax>()
+                    .Any(stmt => stmt.Expression is InvocationExpressionSyntax inv &&
+                                 inv.Expression is IdentifierNameSyntax id &&
+                                 id.Identifier.Text == "DisplayOutputs");
+
+                // Если оба метода уже существуют в классе и уже вызываются, пропускаем
+                if (hasCompute && hasDisplay && alreadyHasComputeCall && alreadyHasDisplayCall)
+                    continue;
+
                 var statements = method.Body.Statements.ToList();
                 var computation = new List<StatementSyntax>();
                 var output = new List<StatementSyntax>();
@@ -41,40 +70,53 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                         other.Add(stmt);
                 }
 
-                if (computation.Any() || output.Any())
+                // Если нет ни вычислений, ни вывода, пропускаем
+                if (!computation.Any() && !output.Any())
+                    continue;
+
+                // Безопасность: если в методе есть локальные переменные, не выносим блоки
+                // (потому что переменные могут быть нужны и в других частях метода)
+                bool hasLocalVariables = method.Body.Statements
+                    .OfType<LocalDeclarationStatementSyntax>()
+                    .Any();
+                if (hasLocalVariables && (computation.Any() || output.Any()))
+                    continue;
+
+                // Создаём ComputeValues, если есть вычисления и метод ещё не создан
+                if (computation.Any() && !hasCompute && !alreadyHasComputeCall)
                 {
-                    var classDecl = method.FirstAncestorOrSelf<ClassDeclarationSyntax>();
-                    if (classDecl == null) continue;
+                    var computeMethod = SyntaxFactory.MethodDeclaration(
+                            SyntaxFactory.PredefinedType(SyntaxFactory.Token(SyntaxKind.VoidKeyword)),
+                            "ComputeValues")
+                        .WithModifiers(SyntaxFactory.TokenList(SyntaxFactory.Token(SyntaxKind.PrivateKeyword)))
+                        .WithBody(SyntaxFactory.Block(computation))
+                        .NormalizeWhitespace();
+                    editor.AddMember(classDecl, computeMethod);
+                    hasCompute = true;
+                    changed = true;
+                }
 
-                    // Создаёт ComputeValues только если есть вычисления
-                    if (computation.Any())
-                    {
-                        var computeMethod = SyntaxFactory.MethodDeclaration(
-                                SyntaxFactory.PredefinedType(SyntaxFactory.Token(SyntaxKind.VoidKeyword)),
-                                "ComputeValues")
-                            .WithModifiers(SyntaxFactory.TokenList(SyntaxFactory.Token(SyntaxKind.PrivateKeyword).WithTrailingTrivia(SyntaxFactory.Space)))
-                            .WithBody(SyntaxFactory.Block(computation))
-                            .NormalizeWhitespace();
-                        editor.AddMember(classDecl, computeMethod);
-                    }
+                // Создаём DisplayOutputs, если есть вывод и метод ещё не создан
+                if (output.Any() && !hasDisplay && !alreadyHasDisplayCall)
+                {
+                    var displayMethod = SyntaxFactory.MethodDeclaration(
+                            SyntaxFactory.PredefinedType(SyntaxFactory.Token(SyntaxKind.VoidKeyword)),
+                            "DisplayOutputs")
+                        .WithModifiers(SyntaxFactory.TokenList(SyntaxFactory.Token(SyntaxKind.PrivateKeyword)))
+                        .WithBody(SyntaxFactory.Block(output))
+                        .NormalizeWhitespace();
+                    editor.AddMember(classDecl, displayMethod);
+                    hasDisplay = true;
+                    changed = true;
+                }
 
-                    // Создаёт DisplayOutputs только если есть вывод
-                    if (output.Any())
-                    {
-                        var displayMethod = SyntaxFactory.MethodDeclaration(
-                                SyntaxFactory.PredefinedType(SyntaxFactory.Token(SyntaxKind.VoidKeyword)),
-                                "DisplayOutputs")
-                            .WithModifiers(SyntaxFactory.TokenList(SyntaxFactory.Token(SyntaxKind.PrivateKeyword).WithTrailingTrivia(SyntaxFactory.Space)))
-                            .WithBody(SyntaxFactory.Block(output))
-                            .NormalizeWhitespace();
-                        editor.AddMember(classDecl, displayMethod);
-                    }
-
-                    // Формирует новое тело: вызовы новых методов + остальные операторы
+                // Если хотя бы один метод был добавлен, перестраиваем тело исходного метода
+                if ((hasCompute && computation.Any()) || (hasDisplay && output.Any()))
+                {
                     var newBodyStatements = new List<StatementSyntax>();
-                    if (computation.Any())
+                    if (hasCompute && computation.Any() && !alreadyHasComputeCall)
                         newBodyStatements.Add(CreateInvocation("ComputeValues"));
-                    if (output.Any())
+                    if (hasDisplay && output.Any() && !alreadyHasDisplayCall)
                         newBodyStatements.Add(CreateInvocation("DisplayOutputs"));
                     newBodyStatements.AddRange(other);
 

@@ -19,8 +19,9 @@ namespace StaticCodeAnalyzer
         private string _originalCode;
         private string _filePath;
         private bool _isDirty;
+        private int? _goToLine;
 
-        public CodeEditorWindow(string filePath, string code)
+        public CodeEditorWindow(string filePath, string code, int? goToLine = null)
         {
             InitializeComponent();
             _analysisService = new AnalysisService();
@@ -29,11 +30,25 @@ namespace StaticCodeAnalyzer
             _originalCode = code;
             CodeEditor.Text = code;
             _isDirty = false;
+            _goToLine = goToLine;
             CodeEditor.TextChanged += (s, e) => { _isDirty = true; SaveButton.IsEnabled = true; };
-            _ = LoadIssuesAsync();
+            this.Loaded += async (s, e) => 
+            {
+                await LoadIssuesAsync();
+                if (_goToLine.HasValue && _goToLine.Value > 0)
+                {
+                    var lineIndex = _goToLine.Value - 1;
+                    if (lineIndex >= 0)
+                    {
+                        CodeEditor.Focus();
+                        CodeEditor.CaretIndex = CodeEditor.GetCharacterIndexFromLineIndex(lineIndex);
+                        CodeEditor.ScrollToLine(lineIndex);
+                    }
+                }
+            };
         }
 
-        private async Task<List<AnalysisIssue>> LoadIssuesAsync()
+        private async Task LoadIssuesAsync()
         {
             try
             {
@@ -42,18 +57,26 @@ namespace StaticCodeAnalyzer
                 await File.WriteAllTextAsync(tempFile, currentCode);
                 var issues = await _analysisService.AnalyzeFiles(new List<string> { tempFile });
                 IssuesListBox.ItemsSource = issues;
-                // Определяет, есть ли исправимые ошибки
+
                 var fixableCodes = _refactoringEngine.GetFixableIssueCodes();
-                bool hasFixable = issues.Any(i => fixableCodes.Contains(i.Code));
-                RefactorButton.IsEnabled = hasFixable;
+                var applicableRules = issues
+                    .Where(i => fixableCodes.Contains(i.Code))
+                    .Select(i => new RuleSelection { Name = $"{i.Code} – {i.RuleName}", Code = i.Code })
+                    .Distinct()
+                    .ToList();
+                foreach (var rule in applicableRules)
+                {
+                    rule.IsSelected = true;
+                }
+                RulesListBox.ItemsSource = applicableRules;
+                RefactorButton.IsEnabled = applicableRules.Any();
+
                 File.Delete(tempFile);
-                return issues;
             }
             catch (Exception ex)
             {
                 MessageBox.Show($"Ошибка при анализе: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
                 RefactorButton.IsEnabled = false;
-                return new List<AnalysisIssue>();
             }
         }
 
@@ -64,20 +87,35 @@ namespace StaticCodeAnalyzer
 
         private async void RefactorButton_Click(object sender, RoutedEventArgs e)
         {
+            var selectedRules = RulesListBox.ItemsSource as IEnumerable<RuleSelection>;
+            if (selectedRules == null) return;
+
+            var allowedCodes = selectedRules.Where(r => r.IsSelected).Select(r => r.Code).ToHashSet();
+            if (!allowedCodes.Any())
+            {
+                MessageBox.Show("Не выбрано ни одного правила для рефакторинга.", "Информация", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
             string currentCode = CodeEditor.Text;
             try
             {
-                string refactoredCode = await _refactoringEngine.ApplyRefactoringAsync(currentCode);
-                if (refactoredCode != currentCode)
+                var result = await _refactoringEngine.ApplyRefactoringWithRollbackAsync(currentCode, allowedCodes);
+                if (result.Success && result.NewCode != currentCode)
                 {
-                    CodeEditor.Text = refactoredCode;
+                    CodeEditor.Text = result.NewCode;
                     _isDirty = true;
                     SaveButton.IsEnabled = true;
-                    await LoadIssuesAsync(); // обновляем ошибки после рефакторинга
+                    await LoadIssuesAsync();
+                }
+                else if (!result.Success)
+                {
+                    MessageBox.Show($"Рефакторинг не выполнен из-за ошибок:\n{string.Join("\n", result.Errors)}", 
+                        "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
                 }
                 else
                 {
-                    MessageBox.Show("Рефакторинг не применим или код не изменился.", "Информация", MessageBoxButton.OK, MessageBoxImage.Information);
+                    MessageBox.Show("Выбранные рефакторинги не применимы или код не изменился.", "Информация", MessageBoxButton.OK, MessageBoxImage.Information);
                 }
             }
             catch (Exception ex)
@@ -120,6 +158,18 @@ namespace StaticCodeAnalyzer
                     return;
             }
             Close();
+        }
+
+        private void IssuesListBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+        {
+            // Можно добавить подсветку в редакторе (опционально)
+        }
+
+        private class RuleSelection
+        {
+            public string Name { get; set; }
+            public string Code { get; set; }
+            public bool IsSelected { get; set; }
         }
     }
 }

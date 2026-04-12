@@ -34,6 +34,7 @@ namespace StaticCodeAnalyzer.Analysis
                 if (location != null)
                 {
                     var lineSpan = location.GetLineSpan();
+                    var containingClass = containingMethod.FirstAncestorOrSelf<ClassDeclarationSyntax>();
                     issues.Add(new AnalysisIssue
                     {
                         Severity = "Средний",
@@ -44,7 +45,9 @@ namespace StaticCodeAnalyzer.Analysis
                         Code = "SEP001",
                         Description = "Прямой вызов Console.WriteLine/Write в бизнес-логике нарушает принцип разделения ответственности.",
                         Suggestion = "Вынесите вывод в отдельный сервис или метод (например, через ILogger).",
-                        RuleName = "ConsoleOutputInBusinessLogic"
+                        RuleName = "ConsoleOutputInBusinessLogic",
+                        ContainingTypeName = containingClass?.Identifier.Text,
+                        MethodName = containingMethod.Identifier.Text
                     });
                 }
             }

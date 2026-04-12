@@ -16,6 +16,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
         public async Task<Document> ApplyAsync(Document document, CancellationToken cancellationToken)
         {
             var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
+            var semanticModel = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
             var editor = await DocumentEditor.CreateAsync(document, cancellationToken).ConfigureAwait(false);
             bool changed = false;
 
@@ -31,20 +32,32 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             var classDecl = consoleWrites.First().FirstAncestorOrSelf<ClassDeclarationSyntax>();
             if (classDecl == null) return document;
 
-            // Проверяет, есть ли уже метод с таким именем
-            var existingMethods = classDecl.Members.OfType<MethodDeclarationSyntax>();
-            if (existingMethods.Any(m => m.Identifier.Text == "DisplayOutput"))
-                return document;
+            // Проверяем, есть ли уже метод DisplayOutput в классе (с любой статичностью)
+            bool hasDisplayOutput = classDecl.Members
+                .OfType<MethodDeclarationSyntax>()
+                .Any(m => m.Identifier.Text == "DisplayOutput");
+            if (hasDisplayOutput) return document;
 
-            // Создаёт метод DisplayOutput
+            // Определяем, является ли вызывающий метод статическим
+            bool isCallerStatic = false;
+            var firstWrite = consoleWrites.First();
+            var containingMethod = firstWrite.FirstAncestorOrSelf<MethodDeclarationSyntax>();
+            if (containingMethod != null && containingMethod.Modifiers.Any(SyntaxKind.StaticKeyword))
+                isCallerStatic = true;
+
+            // Создаём метод DisplayOutput с правильной статичностью
+            var modifiers = SyntaxFactory.TokenList(SyntaxFactory.Token(SyntaxKind.PrivateKeyword));
+            if (isCallerStatic)
+                modifiers = modifiers.Add(SyntaxFactory.Token(SyntaxKind.StaticKeyword));
+
             var outputMethod = SyntaxFactory.MethodDeclaration(
                     SyntaxFactory.PredefinedType(SyntaxFactory.Token(SyntaxKind.VoidKeyword)),
                     "DisplayOutput")
-                .WithModifiers(SyntaxFactory.TokenList(SyntaxFactory.Token(SyntaxKind.PrivateKeyword)))
+                .WithModifiers(modifiers)
                 .WithParameterList(SyntaxFactory.ParameterList(
                     SyntaxFactory.SingletonSeparatedList(
                         SyntaxFactory.Parameter(SyntaxFactory.Identifier("message"))
-                            .WithType(SyntaxFactory.PredefinedType(SyntaxFactory.Token(SyntaxKind.StringKeyword))))))
+                            .WithType(SyntaxFactory.ParseTypeName("object")))))
                 .WithBody(SyntaxFactory.Block(
                     SyntaxFactory.ExpressionStatement(
                         SyntaxFactory.InvocationExpression(
@@ -60,19 +73,30 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             editor.AddMember(classDecl, outputMethod);
             changed = true;
 
-            // Заменяет вызовы Console.WriteLine на DisplayOutput
+            // Заменяем вызовы Console.WriteLine на DisplayOutput
             foreach (var write in consoleWrites)
             {
                 var arg = write.ArgumentList.Arguments.FirstOrDefault();
-                if (arg != null)
+                if (arg == null) continue;
+
+                ExpressionSyntax argumentExpression = arg.Expression;
+                var argType = semanticModel.GetTypeInfo(argumentExpression, cancellationToken).Type;
+                if (argType != null && argType.SpecialType != SpecialType.System_String)
                 {
-                    var newCall = SyntaxFactory.InvocationExpression(
-                            SyntaxFactory.IdentifierName("DisplayOutput"),
-                            SyntaxFactory.ArgumentList(SyntaxFactory.SingletonSeparatedList(arg)))
-                        .WithTriviaFrom(write);
-                    editor.ReplaceNode(write, newCall);
-                    changed = true;
+                    argumentExpression = SyntaxFactory.InvocationExpression(
+                        SyntaxFactory.MemberAccessExpression(
+                            SyntaxKind.SimpleMemberAccessExpression,
+                            argumentExpression,
+                            SyntaxFactory.IdentifierName("ToString")));
                 }
+
+                var newArg = arg.WithExpression(argumentExpression);
+                var newCall = SyntaxFactory.InvocationExpression(
+                        SyntaxFactory.IdentifierName("DisplayOutput"),
+                        SyntaxFactory.ArgumentList(SyntaxFactory.SingletonSeparatedList(newArg)))
+                    .WithTriviaFrom(write);
+                editor.ReplaceNode(write, newCall);
+                changed = true;
             }
 
             return changed ? editor.GetChangedDocument() : document;

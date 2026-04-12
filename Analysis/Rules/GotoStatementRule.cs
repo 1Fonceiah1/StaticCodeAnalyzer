@@ -20,6 +20,8 @@ namespace StaticCodeAnalyzer.Analysis
                 if (location != null)
                 {
                     var lineSpan = location.GetLineSpan();
+                    var containingMethod = gotoStmt.FirstAncestorOrSelf<MethodDeclarationSyntax>();
+                    var containingClass = gotoStmt.FirstAncestorOrSelf<ClassDeclarationSyntax>();
                     issues.Add(new AnalysisIssue
                     {
                         Severity = "Средний",
@@ -30,7 +32,9 @@ namespace StaticCodeAnalyzer.Analysis
                         Code = "GOTO001",
                         Description = "Использование goto усложняет чтение и поддержку кода.",
                         Suggestion = "Перепишите логику с использованием циклов, условий или выделите метод.",
-                        RuleName = "GotoStatement"
+                        RuleName = "GotoStatement",
+                        ContainingTypeName = containingClass?.Identifier.Text,
+                        MethodName = containingMethod?.Identifier.Text
                     });
                 }
             }

@@ -47,7 +47,9 @@ namespace StaticCodeAnalyzer.Analysis
                             Code = "DISP001",
                             Description = $"Класс '{classDecl.Identifier.Text}' содержит поля, реализующие IDisposable, но сам не реализует IDisposable.",
                             Suggestion = "Реализуйте интерфейс IDisposable для корректного освобождения ресурсов.",
-                            RuleName = "DisposableFields"
+                            RuleName = "DisposableFields",
+                            ContainingTypeName = classDecl.Identifier.Text,
+                            MethodName = null
                         });
                     }
                 }

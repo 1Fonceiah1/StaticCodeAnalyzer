@@ -22,6 +22,8 @@ namespace StaticCodeAnalyzer.Analysis
                     if (location != null)
                     {
                         var lineSpan = location.GetLineSpan();
+                        var containingMethod = catchClause.FirstAncestorOrSelf<MethodDeclarationSyntax>();
+                        var containingClass = catchClause.FirstAncestorOrSelf<ClassDeclarationSyntax>();
                         issues.Add(new AnalysisIssue
                         {
                             Severity = "Высокий",
@@ -32,7 +34,9 @@ namespace StaticCodeAnalyzer.Analysis
                             Code = "ERR001",
                             Description = "Пустой блок catch подавляет исключения без обработки.",
                             Suggestion = "Добавьте логирование, повторный выброс или корректную обработку исключения.",
-                            RuleName = "EmptyCatchBlocks"
+                            RuleName = "EmptyCatchBlocks",
+                            ContainingTypeName = containingClass?.Identifier.Text,
+                            MethodName = containingMethod?.Identifier.Text
                         });
                     }
                 }

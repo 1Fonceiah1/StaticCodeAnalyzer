@@ -22,7 +22,7 @@ namespace StaticCodeAnalyzer.Analysis
             var literals = root.DescendantNodes()
                 .OfType<LiteralExpressionSyntax>()
                 .Where(l => l.IsKind(SyntaxKind.NumericLiteralExpression))
-                .Where(l => !IsAllowed(l) && !IsInConstContext(l));
+                .Where(l => !IsAllowed(l) && !IsInConstContext(l) && !IsInNameOf(l));
 
             foreach (var literal in literals)
             {
@@ -30,6 +30,8 @@ namespace StaticCodeAnalyzer.Analysis
                 if (location != null)
                 {
                     var lineSpan = location.GetLineSpan();
+                    var containingMethod = literal.FirstAncestorOrSelf<MethodDeclarationSyntax>();
+                    var containingClass = literal.FirstAncestorOrSelf<ClassDeclarationSyntax>();
                     issues.Add(new AnalysisIssue
                     {
                         Severity = "Низкий",
@@ -40,7 +42,9 @@ namespace StaticCodeAnalyzer.Analysis
                         Code = "MAG001",
                         Description = $"Магическое число '{literal.Token.Text}' снижает читаемость кода.",
                         Suggestion = "Замените на именованную константу с понятным именем.",
-                        RuleName = "MagicNumbers"
+                        RuleName = "MagicNumbers",
+                        ContainingTypeName = containingClass?.Identifier.Text,
+                        MethodName = containingMethod?.Identifier.Text
                     });
                 }
             }
@@ -60,7 +64,21 @@ namespace StaticCodeAnalyzer.Analysis
                 a is LocalDeclarationStatementSyntax l && l.Modifiers.Any(SyntaxKind.ConstKeyword) ||
                 a is EnumMemberDeclarationSyntax ||
                 a is AttributeSyntax ||
-                (a is ParameterSyntax p && p.Default?.Value == literal));
+                (a is ParameterSyntax p && p.Default?.Value == literal) ||
+                (a is EqualsValueClauseSyntax eq && eq.Parent is VariableDeclaratorSyntax v &&
+                 v.Parent?.Parent is FieldDeclarationSyntax field && field.Modifiers.Any(SyntaxKind.ConstKeyword)));
+        }
+
+        private bool IsInNameOf(LiteralExpressionSyntax literal)
+        {
+            var parent = literal.Parent;
+            while (parent != null)
+            {
+                if (parent is InvocationExpressionSyntax inv && inv.Expression is IdentifierNameSyntax id && id.Identifier.Text == "nameof")
+                    return true;
+                parent = parent.Parent;
+            }
+            return false;
         }
     }
 }

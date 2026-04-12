@@ -1,11 +1,14 @@
 ﻿using Microsoft.Win32;
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Input;
 using StaticCodeAnalyzer.Analysis;
 using StaticCodeAnalyzer.Data;
@@ -17,19 +20,27 @@ namespace StaticCodeAnalyzer
     public partial class MainWindow : Window
     {
         private readonly AnalysisService _analysisService;
+        private readonly RefactoringEngine _refactoringEngine;
         private readonly Repository _repository;
         private List<AnalysisIssue> _currentIssues;
         private string _currentPath;
         private bool _isFolder;
         private List<FileTreeNode> _allRootNodes = new List<FileTreeNode>();
+        private CancellationTokenSource _cancellationTokenSource;
+        private CollectionViewSource _resultsViewSource;
 
         public MainWindow()
         {
             InitializeComponent();
             _analysisService = new AnalysisService();
+            _refactoringEngine = new RefactoringEngine();
             _repository = new Repository(new AppDbContext());
             _currentIssues = new List<AnalysisIssue>();
             this.Closing += MainWindow_Closing;
+
+            // Настройка фильтрации
+            _resultsViewSource = new CollectionViewSource();
+            _resultsViewSource.Filter += ResultsFilter;
 
             Logger.Log("AppStart", "Приложение запущено");
         }
@@ -61,7 +72,7 @@ namespace StaticCodeAnalyzer
             }
         }
 
-        private async Task LoadFileTreeAsync(string filePath)
+        private Task LoadFileTreeAsync(string filePath)
         {
             FilesTreeView.Items.Clear();
             _allRootNodes.Clear();
@@ -74,6 +85,7 @@ namespace StaticCodeAnalyzer
             };
             _allRootNodes.Add(root);
             FilesTreeView.Items.Add(root);
+            return Task.CompletedTask;
         }
 
         private async Task LoadFolderTreeAsync(string folderPath)
@@ -87,16 +99,19 @@ namespace StaticCodeAnalyzer
                 IsFolder = true,
                 Children = new List<FileTreeNode>()
             };
-            await AddFilesToTree(root, folderPath);
+            await AddFilesToTreeAsync(root, folderPath);
             _allRootNodes.Add(root);
             FilesTreeView.Items.Add(root);
         }
 
-        private async Task AddFilesToTree(FileTreeNode parent, string directory)
+        private async Task AddFilesToTreeAsync(FileTreeNode parent, string directory)
         {
             try
             {
-                foreach (var dir in Directory.GetDirectories(directory))
+                var directories = await Task.Run(() => Directory.GetDirectories(directory));
+                var files = await Task.Run(() => Directory.GetFiles(directory, "*.cs"));
+
+                foreach (var dir in directories)
                 {
                     var subNode = new FileTreeNode
                     {
@@ -106,9 +121,10 @@ namespace StaticCodeAnalyzer
                         Children = new List<FileTreeNode>()
                     };
                     parent.Children.Add(subNode);
-                    await AddFilesToTree(subNode, dir);
+                    await AddFilesToTreeAsync(subNode, dir);
                 }
-                foreach (var file in Directory.GetFiles(directory, "*.cs"))
+
+                foreach (var file in files)
                 {
                     var fileNode = new FileTreeNode
                     {
@@ -120,7 +136,10 @@ namespace StaticCodeAnalyzer
                     parent.Children.Add(fileNode);
                 }
             }
-            catch (UnauthorizedAccessException) { }
+            catch (UnauthorizedAccessException ex)
+            {
+                Logger.Log("AddFilesToTreeError", $"Нет доступа к {directory}: {ex.Message}");
+            }
         }
 
         private List<FileTreeNode> GetAllFilesFromNodes(List<FileTreeNode> nodes)
@@ -144,6 +163,13 @@ namespace StaticCodeAnalyzer
                 return;
             }
 
+            _cancellationTokenSource?.Cancel();
+            _cancellationTokenSource = new CancellationTokenSource();
+            var token = _cancellationTokenSource.Token;
+
+            CancelButton.IsEnabled = true;
+            ProgressBar.Visibility = Visibility.Visible;
+            ProgressBar.Value = 0;
             StatusText.Text = "Анализ...";
             Mouse.OverrideCursor = Cursors.Wait;
             Logger.Log("AnalyzeStart", $"Объект: {_currentPath}");
@@ -159,14 +185,21 @@ namespace StaticCodeAnalyzer
                     return;
                 }
 
-                var issues = await Task.Run(() => _analysisService.AnalyzeFiles(filesToAnalyze));
+                var progress = new Progress<int>(value => ProgressBar.Value = value);
+                var issues = await Task.Run(() => _analysisService.AnalyzeFiles(filesToAnalyze, progress, token), token);
                 _currentIssues = issues;
 
                 await SaveAnalysisResultsToDbAsync(issues, _currentPath, _isFolder);
 
-                ResultsGrid.ItemsSource = _currentIssues;
+                _resultsViewSource.Source = _currentIssues;
+                ResultsGrid.ItemsSource = _resultsViewSource.View;
                 StatusText.Text = $"Анализ завершён. Найдено {issues.Count} проблем.";
                 Logger.Log("AnalyzeEnd", $"Найдено проблем: {issues.Count}");
+            }
+            catch (OperationCanceledException)
+            {
+                StatusText.Text = "Анализ отменён.";
+                Logger.Log("AnalyzeCancel", "Пользователь отменил анализ");
             }
             catch (Exception ex)
             {
@@ -177,6 +210,10 @@ namespace StaticCodeAnalyzer
             finally
             {
                 Mouse.OverrideCursor = null;
+                CancelButton.IsEnabled = false;
+                ProgressBar.Visibility = Visibility.Collapsed;
+                _cancellationTokenSource?.Dispose();
+                _cancellationTokenSource = null;
             }
         }
 
@@ -268,8 +305,84 @@ namespace StaticCodeAnalyzer
             }
         }
 
-        private void MainWindow_Closing(object sender, System.ComponentModel.CancelEventArgs e)
+        private void CancelButton_Click(object sender, RoutedEventArgs e)
         {
+            _cancellationTokenSource?.Cancel();
+            CancelButton.IsEnabled = false;
+            StatusText.Text = "Отмена операции...";
+        }
+
+        private void ResultsGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            var issue = ResultsGrid.SelectedItem as AnalysisIssue;
+            if (issue == null || string.IsNullOrEmpty(issue.FilePath) || !File.Exists(issue.FilePath))
+                return;
+
+            string code = File.ReadAllText(issue.FilePath);
+            var editor = new CodeEditorWindow(issue.FilePath, code, issue.LineNumber);
+            editor.Owner = this;
+            editor.ShowDialog();
+        }
+
+        // Фильтрация
+        private void Filter_Changed(object sender, EventArgs e)
+        {
+            _resultsViewSource?.View?.Refresh();
+        }
+
+        private void ResetFilter_Click(object sender, RoutedEventArgs e)
+        {
+            FilterSeverity.SelectedIndex = 0;
+            FilterCode.Text = "";
+            FilterFile.Text = "";
+        }
+
+        private void ResultsFilter(object sender, FilterEventArgs e)
+        {
+            var issue = e.Item as AnalysisIssue;
+            if (issue == null)
+            {
+                e.Accepted = false;
+                return;
+            }
+
+            // Фильтр по важности
+            var severityItem = FilterSeverity.SelectedItem as ComboBoxItem;
+            if (severityItem != null && severityItem.Content.ToString() != "Все")
+            {
+                if (issue.Severity != severityItem.Content.ToString())
+                {
+                    e.Accepted = false;
+                    return;
+                }
+            }
+
+            // Фильтр по коду
+            if (!string.IsNullOrWhiteSpace(FilterCode.Text))
+            {
+                if (!issue.Code.Contains(FilterCode.Text, StringComparison.OrdinalIgnoreCase))
+                {
+                    e.Accepted = false;
+                    return;
+                }
+            }
+
+            // Фильтр по файлу
+            if (!string.IsNullOrWhiteSpace(FilterFile.Text))
+            {
+                if (!issue.FilePath.Contains(FilterFile.Text, StringComparison.OrdinalIgnoreCase))
+                {
+                    e.Accepted = false;
+                    return;
+                }
+            }
+
+            e.Accepted = true;
+        }
+
+        private void MainWindow_Closing(object sender, CancelEventArgs e)
+        {
+            _cancellationTokenSource?.Cancel();
             _repository.Dispose();
         }
     }

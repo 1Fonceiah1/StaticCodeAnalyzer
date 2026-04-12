@@ -27,6 +27,7 @@ namespace StaticCodeAnalyzer.Analysis
                         if (location != null)
                         {
                             var lineSpan = location.GetLineSpan();
+                            var containingClass = methods[i].FirstAncestorOrSelf<ClassDeclarationSyntax>();
                             issues.Add(new AnalysisIssue
                             {
                                 Severity = "Средний",
@@ -37,7 +38,9 @@ namespace StaticCodeAnalyzer.Analysis
                                 Code = "DUP001",
                                 Description = $"Метод '{methods[i].Identifier.Text}' имеет идентичное тело с методом '{methods[j].Identifier.Text}'.",
                                 Suggestion = "Объедините дублирующийся код в один метод или используйте наследование.",
-                                RuleName = "CodeDuplication"
+                                RuleName = "CodeDuplication",
+                                ContainingTypeName = containingClass?.Identifier.Text,
+                                MethodName = methods[i].Identifier.Text
                             });
                         }
                     }
@@ -51,8 +54,6 @@ namespace StaticCodeAnalyzer.Analysis
         {
             if (body1 == null && body2 == null) return true;
             if (body1 == null || body2 == null) return false;
-            
-            // Надёжное сравнение без SyntaxFactory: убирает пробелы/переносы и сравниваем текст
             return body1.NormalizeWhitespace().ToFullString() == body2.NormalizeWhitespace().ToFullString();
         }
     }

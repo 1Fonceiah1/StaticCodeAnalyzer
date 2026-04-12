@@ -29,6 +29,7 @@ namespace StaticCodeAnalyzer.Analysis
                     if (location != null)
                     {
                         var lineSpan = location.GetLineSpan();
+                        var containingClass = method.FirstAncestorOrSelf<ClassDeclarationSyntax>();
                         issues.Add(new AnalysisIssue
                         {
                             Severity = "Средний",
@@ -39,7 +40,9 @@ namespace StaticCodeAnalyzer.Analysis
                             Code = "ASY001",
                             Description = $"Асинхронный метод '{method.Identifier.Text}' не содержит операторов await.",
                             Suggestion = "Удалите модификатор async или добавьте await для асинхронных операций.",
-                            RuleName = "AsyncAwaitUsage"
+                            RuleName = "AsyncAwaitUsage",
+                            ContainingTypeName = containingClass?.Identifier.Text,
+                            MethodName = method.Identifier.Text
                         });
                     }
                 }

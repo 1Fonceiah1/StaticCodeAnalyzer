@@ -1,4 +1,5 @@
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Editing;
 using Microsoft.CodeAnalysis.FindSymbols;
@@ -30,18 +31,13 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                 var symbol = semanticModel.GetDeclaredSymbol(variable, cancellationToken);
                 if (symbol == null) continue;
 
-                // Ищет ссылки через SymbolFinder с передачей Solution
-                var references = await SymbolFinder.FindReferencesAsync(
-                    symbol, 
-                    document.Project.Solution, 
-                    cancellationToken).ConfigureAwait(false);
-
-                // Считает только явные использования (не объявление)
+                var references = await SymbolFinder.FindReferencesAsync(symbol, document.Project.Solution, cancellationToken).ConfigureAwait(false);
+                
                 int usageCount = references
                     .SelectMany(r => r.Locations)
-                    .Count(loc => !loc.IsImplicit);
+                    .Count(loc => !loc.IsImplicit && loc.Location.SourceTree == root.SyntaxTree);
 
-                if (usageCount <= 1) // только объявление
+                if (usageCount == 0)
                 {
                     var declaration = variable.Parent as VariableDeclarationSyntax;
                     var statement = declaration?.Parent as LocalDeclarationStatementSyntax;
@@ -49,21 +45,20 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 
                     if (declaration.Variables.Count == 1)
                     {
-                        // Удаляет всё объявление
                         editor.RemoveNode(statement);
                         changed = true;
                     }
                     else
                     {
-                        // Удаляет только эту переменную из списка
-                        var newDecl = declaration.RemoveNode(variable, SyntaxRemoveOptions.KeepNoTrivia);
-                        if (newDecl is VariableDeclarationSyntax newVarDecl && newVarDecl.Variables.Count == 0)
+                        var newVariables = declaration.Variables.Where(v => v != variable).ToArray();
+                        if (newVariables.Length == 0)
                         {
                             editor.RemoveNode(statement);
                         }
-                        else if (newDecl != null)
+                        else
                         {
-                            editor.ReplaceNode(declaration, newDecl);
+                            var newDeclaration = declaration.WithVariables(SyntaxFactory.SeparatedList(newVariables));
+                            editor.ReplaceNode(declaration, newDeclaration);
                         }
                         changed = true;
                     }

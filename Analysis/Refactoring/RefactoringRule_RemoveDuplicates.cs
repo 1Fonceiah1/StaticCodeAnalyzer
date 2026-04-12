@@ -29,7 +29,9 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             {
                 for (int j = i + 1; j < methods.Count; j++)
                 {
-                    if (AreBodiesEquivalent(methods[i].Body, methods[j].Body))
+                    // Сравниваем не только тела, но и сигнатуры
+                    if (AreBodiesEquivalent(methods[i].Body, methods[j].Body) && 
+                        AreSignaturesEquivalent(methods[i], methods[j], semanticModel, cancellationToken))
                     {
                         var targetMethod = methods[j];
                         var sourceMethod = methods[i];
@@ -92,6 +94,37 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             if (body1 == null && body2 == null) return true;
             if (body1 == null || body2 == null) return false;
             return body1.NormalizeWhitespace().ToFullString() == body2.NormalizeWhitespace().ToFullString();
+        }
+
+        /// <summary>
+        /// Сравнивает сигнатуры методов: возвращаемый тип, модификаторы, параметры.
+        /// </summary>
+        private bool AreSignaturesEquivalent(MethodDeclarationSyntax m1, MethodDeclarationSyntax m2, SemanticModel model, CancellationToken ct)
+        {
+            var symbol1 = model.GetDeclaredSymbol(m1, ct);
+            var symbol2 = model.GetDeclaredSymbol(m2, ct);
+            if (symbol1 == null || symbol2 == null) return false;
+
+            // Сравнение возвращаемого типа
+            if (!SymbolEqualityComparer.Default.Equals(symbol1.ReturnType, symbol2.ReturnType))
+                return false;
+
+            // Сравнение модификаторов (public, static, async, etc.) – упрощённо
+            var mods1 = new HashSet<string>(m1.Modifiers.Select(m => m.Text));
+            var mods2 = new HashSet<string>(m2.Modifiers.Select(m => m.Text));
+            if (!mods1.SetEquals(mods2)) return false;
+
+            // Сравнение параметров
+            if (symbol1.Parameters.Length != symbol2.Parameters.Length) return false;
+            for (int i = 0; i < symbol1.Parameters.Length; i++)
+            {
+                if (!SymbolEqualityComparer.Default.Equals(symbol1.Parameters[i].Type, symbol2.Parameters[i].Type))
+                    return false;
+                if (symbol1.Parameters[i].RefKind != symbol2.Parameters[i].RefKind)
+                    return false;
+            }
+
+            return true;
         }
     }
 }

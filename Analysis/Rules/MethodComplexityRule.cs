@@ -26,6 +26,7 @@ namespace StaticCodeAnalyzer.Analysis
                     if (location != null)
                     {
                         var lineSpan = location.GetLineSpan();
+                        var containingClass = method.FirstAncestorOrSelf<ClassDeclarationSyntax>();
                         issues.Add(new AnalysisIssue
                         {
                             Severity = "Высокий",
@@ -36,7 +37,9 @@ namespace StaticCodeAnalyzer.Analysis
                             Code = "CPX001",
                             Description = $"Метод '{method.Identifier.Text}' имеет цикломатическую сложность {complexity} (порог: {MaxComplexity}).",
                             Suggestion = "Разбейте метод на несколько меньших или выделите вспомогательные методы.",
-                            RuleName = "MethodComplexity"
+                            RuleName = "MethodComplexity",
+                            ContainingTypeName = containingClass?.Identifier.Text,
+                            MethodName = method.Identifier.Text
                         });
                     }
                 }

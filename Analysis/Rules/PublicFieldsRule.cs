@@ -25,6 +25,7 @@ namespace StaticCodeAnalyzer.Analysis
                     if (location != null)
                     {
                         var lineSpan = location.GetLineSpan();
+                        var containingClass = field.FirstAncestorOrSelf<ClassDeclarationSyntax>();
                         issues.Add(new AnalysisIssue
                         {
                             Severity = "Средний",
@@ -35,7 +36,9 @@ namespace StaticCodeAnalyzer.Analysis
                             Code = "ENC001",
                             Description = $"Публичное поле '{variable.Identifier.Text}' нарушает инкапсуляцию.",
                             Suggestion = "Сделайте поле приватным и предоставьте доступ через свойство (property).",
-                            RuleName = "PublicFields"
+                            RuleName = "PublicFields",
+                            ContainingTypeName = containingClass?.Identifier.Text,
+                            MethodName = null
                         });
                     }
                 }

@@ -2,6 +2,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Editing;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -10,6 +11,8 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 {
     public class RefactoringRule_EncapsulateFields : IRefactoringRule
     {
+        public IEnumerable<string> TargetIssueCodes => new[] { "ENC001" };
+
         public async Task<Document> ApplyAsync(Document document, CancellationToken cancellationToken)
         {
             var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
@@ -36,20 +39,17 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                     string propertyName = ToPascalCase(originalName);
                     string fieldName = originalName.StartsWith("_") ? originalName : $"_{ToCamelCase(originalName)}";
 
-                    // Проверка: нет ли уже свойства с таким именем (регистронезависимо)
                     bool propertyExists = typeDecl.Members
                         .OfType<PropertyDeclarationSyntax>()
                         .Any(p => p.Identifier.Text.Equals(propertyName, System.StringComparison.OrdinalIgnoreCase));
                     if (propertyExists) continue;
 
-                    // Проверка: нет ли уже поля с новым именем
                     bool fieldExists = typeDecl.Members
                         .OfType<FieldDeclarationSyntax>()
                         .SelectMany(f => f.Declaration.Variables)
                         .Any(v => v.Identifier.Text.Equals(fieldName, System.StringComparison.OrdinalIgnoreCase));
                     if (fieldExists) continue;
 
-                    // Меняет поле на private с новым именем
                     var newModifiers = fieldDecl.Modifiers
                         .Where(m => !m.IsKind(SyntaxKind.PublicKeyword))
                         .Append(SyntaxFactory.Token(SyntaxKind.PrivateKeyword));
@@ -60,7 +60,6 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                             variable.WithIdentifier(SyntaxFactory.Identifier(fieldName)))))
                         .NormalizeWhitespace();
 
-                    // Создаёт публичное автоматическое свойство
                     var property = SyntaxFactory.PropertyDeclaration(
                             fieldDecl.Declaration.Type.WithTrailingTrivia(SyntaxFactory.Space),
                             SyntaxFactory.Identifier(propertyName))

@@ -29,12 +29,13 @@ namespace StaticCodeAnalyzer.Analysis
                     .Count(id => semanticModel.GetSymbolInfo(id).Symbol != null &&
                                  SymbolEqualityComparer.Default.Equals(semanticModel.GetSymbolInfo(id).Symbol, symbol));
 
-                if (usageCount <= 1) // только объявление
+                if (usageCount <= 1)
                 {
                     var location = variable.Identifier.GetLocation();
                     if (location != null)
                     {
                         var lineSpan = location.GetLineSpan();
+                        var containingClass = variable.FirstAncestorOrSelf<ClassDeclarationSyntax>();
                         issues.Add(new AnalysisIssue
                         {
                             Severity = "Низкий",
@@ -45,7 +46,9 @@ namespace StaticCodeAnalyzer.Analysis
                             Code = "UNU001",
                             Description = $"Переменная '{variable.Identifier.Text}' объявлена, но не используется.",
                             Suggestion = "Удалите неиспользуемую переменную или используйте её в коде.",
-                            RuleName = "UnusedVariables"
+                            RuleName = "UnusedVariables",
+                            ContainingTypeName = containingClass?.Identifier.Text,
+                            MethodName = method?.Identifier.Text
                         });
                     }
                 }

@@ -12,6 +12,8 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 {
     public class RefactoringRule_MagicNumbers : IRefactoringRule
     {
+        public IEnumerable<string> TargetIssueCodes => new[] { "MAG001" };
+
         public async Task<Document> ApplyAsync(Document document, CancellationToken cancellationToken)
         {
             var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
@@ -21,7 +23,8 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 
             var magicLiterals = root.DescendantNodes()
                 .OfType<LiteralExpressionSyntax>()
-                .Where(l => l.IsKind(SyntaxKind.NumericLiteralExpression) && !IsAllowed(l) && !IsInConstContext(l))
+                .Where(l => l.IsKind(SyntaxKind.NumericLiteralExpression))
+                .Where(l => !IsAllowed(l) && !IsInConstContext(l) && !IsInArrayIndexOrSize(l) && !IsInAttribute(l))
                 .ToList();
 
             if (!magicLiterals.Any()) return document;
@@ -30,7 +33,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             foreach (var group in groups)
             {
                 var literalText = group.Key;
-                var typeName = GetNumericTypeName(literalText); // ← ИСПРАВЛЕНО: корректное определение типа
+                var typeName = GetNumericTypeName(literalText);
                 var constName = GenerateConstName(literalText);
                 var first = group.First();
                 var containingType = first.Ancestors().OfType<TypeDeclarationSyntax>().FirstOrDefault();
@@ -46,7 +49,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                                 SyntaxFactory.VariableDeclarator(constName)
                                     .WithInitializer(SyntaxFactory.EqualsValueClause(first.WithoutTrivia())))))
                     .WithModifiers(SyntaxFactory.TokenList(
-                        SyntaxFactory.Token(SyntaxKind.PrivateKeyword), 
+                        SyntaxFactory.Token(SyntaxKind.PrivateKeyword),
                         SyntaxFactory.Token(SyntaxKind.ConstKeyword)))
                     .NormalizeWhitespace();
 
@@ -73,10 +76,28 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
         private bool IsInConstContext(LiteralExpressionSyntax literal) =>
             literal.Ancestors().Any(a => a is AttributeSyntax || a is EnumMemberDeclarationSyntax ||
                 (a is ParameterSyntax p && p.Default?.Value == literal) ||
-                (a is VariableDeclaratorSyntax v && v.Parent?.Parent is FieldDeclarationSyntax f && 
+                (a is VariableDeclaratorSyntax v && v.Parent?.Parent is FieldDeclarationSyntax f &&
                  f.Modifiers.Any(m => m.IsKind(SyntaxKind.ConstKeyword))));
 
-        // Корректное определение типа по суффиксу и наличию точки
+        private bool IsInArrayIndexOrSize(LiteralExpressionSyntax literal)
+        {
+            var parent = literal.Parent;
+            while (parent != null)
+            {
+                if (parent is BracketedArgumentListSyntax || parent is ElementAccessExpressionSyntax)
+                    return true;
+                if (parent is ArrayRankSpecifierSyntax)
+                    return true;
+                parent = parent.Parent;
+            }
+            return false;
+        }
+
+        private bool IsInAttribute(LiteralExpressionSyntax literal)
+        {
+            return literal.Ancestors().OfType<AttributeSyntax>().Any();
+        }
+
         private string GetNumericTypeName(string text)
         {
             if (text.Contains("f") || text.Contains("F")) return "float";
@@ -84,7 +105,6 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             if (text.Contains("d") || text.Contains("D")) return "double";
             if (text.Contains("L") || text.Contains("l")) return "long";
             if (text.Contains("U") || text.Contains("u")) return text.Contains("L") ? "ulong" : "uint";
-            // Если есть точка и нет суффикса - это double по умолчанию в C#
             if (text.Contains(".")) return "double";
             return "int";
         }

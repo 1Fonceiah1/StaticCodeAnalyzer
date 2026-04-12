@@ -17,18 +17,34 @@ namespace StaticCodeAnalyzer.Analysis
 
             foreach (var classDecl in classes)
             {
-                var mutableFields = classDecl.DescendantNodes()
+                var mutableFields = classDecl.Members
                     .OfType<FieldDeclarationSyntax>()
                     .Where(f => !f.Modifiers.Any(SyntaxKind.ReadOnlyKeyword) && !f.Modifiers.Any(SyntaxKind.ConstKeyword))
                     .SelectMany(f => f.Declaration.Variables)
+                    .Select(v => new
+                    {
+                        Syntax = v,
+                        Symbol = semanticModel.GetDeclaredSymbol(v) as IFieldSymbol
+                    })
+                    .Where(x => x.Symbol != null)
                     .ToList();
 
                 if (!mutableFields.Any()) continue;
 
+                bool anyFieldMutated = false;
+                foreach (var field in mutableFields)
+                {
+                    if (IsFieldWrittenAfterConstructor(classDecl, field.Symbol, semanticModel))
+                    {
+                        anyFieldMutated = true;
+                        break;
+                    }
+                }
+
+                if (!anyFieldMutated) continue;
+
                 bool hasLock = classDecl.DescendantNodes().OfType<LockStatementSyntax>().Any();
-                bool hasThreadSafeTypes = classDecl.DescendantNodes()
-                    .OfType<FieldDeclarationSyntax>()
-                    .Any(f => IsThreadSafeType(f.Declaration.Type.ToString()));
+                bool hasThreadSafeTypes = mutableFields.Any(f => IsThreadSafeType(f.Symbol.Type.ToDisplayString()));
 
                 if (!hasLock && !hasThreadSafeTypes)
                 {
@@ -44,15 +60,72 @@ namespace StaticCodeAnalyzer.Analysis
                             ColumnNumber = lineSpan.StartLinePosition.Character + 1,
                             Type = "предупреждение",
                             Code = "THR001",
-                            Description = $"Класс '{classDecl.Identifier.Text}' содержит изменяемые поля без синхронизации.",
+                            Description = $"Класс '{classDecl.Identifier.Text}' содержит изменяемые поля, которые реально изменяются после конструктора, без синхронизации.",
                             Suggestion = "Добавьте lock, используйте Concurrent-коллекции или Immutable-типы.",
-                            RuleName = "ThreadSafety"
+                            RuleName = "ThreadSafety",
+                            ContainingTypeName = classDecl.Identifier.Text,
+                            MethodName = null
                         });
                     }
                 }
             }
 
             return Task.FromResult(issues);
+        }
+
+        private bool IsFieldWrittenAfterConstructor(ClassDeclarationSyntax classDecl, IFieldSymbol field, SemanticModel model)
+        {
+            var members = classDecl.Members;
+            foreach (var member in members)
+            {
+                if (member is ConstructorDeclarationSyntax) continue;
+                if (member is MethodDeclarationSyntax method && method.Body != null)
+                {
+                    if (MethodWritesField(method, field, model)) return true;
+                }
+                if (member is PropertyDeclarationSyntax prop && prop.AccessorList != null)
+                {
+                    foreach (var accessor in prop.AccessorList.Accessors)
+                    {
+                        if (accessor.Body != null && MethodWritesField(accessor.Body, field, model))
+                            return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        private bool MethodWritesField(MethodDeclarationSyntax method, IFieldSymbol field, SemanticModel model)
+        {
+            return MethodWritesField(method.Body, field, model);
+        }
+
+        private bool MethodWritesField(BlockSyntax body, IFieldSymbol field, SemanticModel model)
+        {
+            var assignments = body.DescendantNodes()
+                .OfType<AssignmentExpressionSyntax>()
+                .Where(a => a.IsKind(SyntaxKind.SimpleAssignmentExpression) ||
+                            a.IsKind(SyntaxKind.AddAssignmentExpression) ||
+                            a.IsKind(SyntaxKind.SubtractAssignmentExpression) ||
+                            a.IsKind(SyntaxKind.MultiplyAssignmentExpression));
+
+            foreach (var assign in assignments)
+            {
+                var left = assign.Left;
+                if (left is IdentifierNameSyntax id)
+                {
+                    var symbol = model.GetSymbolInfo(id).Symbol;
+                    if (SymbolEqualityComparer.Default.Equals(symbol, field))
+                        return true;
+                }
+                if (left is MemberAccessExpressionSyntax member && member.Expression is ThisExpressionSyntax)
+                {
+                    var symbol = model.GetSymbolInfo(member).Symbol;
+                    if (SymbolEqualityComparer.Default.Equals(symbol, field))
+                        return true;
+                }
+            }
+            return false;
         }
 
         private bool IsThreadSafeType(string typeName)

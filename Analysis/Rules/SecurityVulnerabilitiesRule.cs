@@ -16,7 +16,7 @@ namespace StaticCodeAnalyzer.Analysis
         {
             var issues = new List<AnalysisIssue>();
 
-            // SQL-инъекции: конкатенация строк в запросах
+            // SQL-инъекции
             var stringConcatenations = root.DescendantNodes()
                 .OfType<BinaryExpressionSyntax>()
                 .Where(b => b.IsKind(SyntaxKind.AddExpression) && ContainsSqlKeyword(b));
@@ -27,6 +27,8 @@ namespace StaticCodeAnalyzer.Analysis
                 if (location != null)
                 {
                     var lineSpan = location.GetLineSpan();
+                    var containingMethod = expr.FirstAncestorOrSelf<MethodDeclarationSyntax>();
+                    var containingClass = expr.FirstAncestorOrSelf<ClassDeclarationSyntax>();
                     issues.Add(new AnalysisIssue
                     {
                         Severity = "Критический",
@@ -37,12 +39,14 @@ namespace StaticCodeAnalyzer.Analysis
                         Code = "SEC001",
                         Description = "Возможная уязвимость SQL-инъекции: конкатенация строк в запросе.",
                         Suggestion = "Используйте параметризованные запросы или ORM с защитой от инъекций.",
-                        RuleName = "SecurityVulnerabilities"
+                        RuleName = "SecurityVulnerabilities",
+                        ContainingTypeName = containingClass?.Identifier.Text,
+                        MethodName = containingMethod?.Identifier.Text
                     });
                 }
             }
 
-            // Process.Start с непроверенными аргументами
+            // Process.Start
             var processCalls = root.DescendantNodes()
                 .OfType<InvocationExpressionSyntax>()
                 .Where(IsProcessStartCall);
@@ -56,6 +60,8 @@ namespace StaticCodeAnalyzer.Analysis
                     if (location != null)
                     {
                         var lineSpan = location.GetLineSpan();
+                        var containingMethod = call.FirstAncestorOrSelf<MethodDeclarationSyntax>();
+                        var containingClass = call.FirstAncestorOrSelf<ClassDeclarationSyntax>();
                         issues.Add(new AnalysisIssue
                         {
                             Severity = "Высокий",
@@ -66,7 +72,9 @@ namespace StaticCodeAnalyzer.Analysis
                             Code = "SEC002",
                             Description = "Process.Start вызван с непроверенным аргументом — риск выполнения произвольного кода.",
                             Suggestion = "Валидируйте входные данные перед передачей в Process.Start.",
-                            RuleName = "SecurityVulnerabilities"
+                            RuleName = "SecurityVulnerabilities",
+                            ContainingTypeName = containingClass?.Identifier.Text,
+                            MethodName = containingMethod?.Identifier.Text
                         });
                     }
                 }

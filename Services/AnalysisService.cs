@@ -1,4 +1,8 @@
+using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using StaticCodeAnalyzer.Analysis;
 using StaticCodeAnalyzer.Models;
@@ -14,15 +18,17 @@ namespace StaticCodeAnalyzer.Services
             _engine = new AnalyzerEngine();
         }
 
-        public async Task<List<AnalysisIssue>> AnalyzeFiles(List<string> filePaths)
+        public async Task<List<AnalysisIssue>> AnalyzeFiles(List<string> filePaths, IProgress<int> progress = null, CancellationToken cancellationToken = default)
         {
-            var allIssues = new List<AnalysisIssue>();
-            foreach (var file in filePaths)
-            {
-                var issues = await _engine.AnalyzeFileAsync(file);
-                allIssues.AddRange(issues);
-            }
-            return allIssues;
+            if (filePaths == null || filePaths.Count == 0)
+                return new List<AnalysisIssue>();
+
+            var rootDirectory = Path.GetDirectoryName(filePaths[0]);
+            if (string.IsNullOrEmpty(rootDirectory))
+                return new List<AnalysisIssue>();
+
+            var context = await ProjectContext.CreateAsync(rootDirectory, cancellationToken);
+            return await _engine.AnalyzeProjectAsync(context, filePaths, progress, cancellationToken);
         }
     }
 }
