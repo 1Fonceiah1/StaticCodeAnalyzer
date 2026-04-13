@@ -30,21 +30,29 @@ namespace StaticCodeAnalyzer.Data
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
+            // Явное указание первичных ключей для всех сущностей
+            modelBuilder.Entity<Project>().HasKey(p => p.ProjectId);
+            modelBuilder.Entity<Scan>().HasKey(s => s.ScanId);
+            modelBuilder.Entity<AnalysisResult>().HasKey(ar => ar.ResultId);
+            modelBuilder.Entity<AnalysisRule>().HasKey(r => r.RuleId);
+            modelBuilder.Entity<AnalysisExclusion>().HasKey(e => e.ExclusionId);
+            modelBuilder.Entity<ScannedFile>().HasKey(sf => sf.ScannedFileId);
+            
             // Настройка хранения параметров сканирования как JSONB
             modelBuilder.Entity<Scan>()
                 .Property(s => s.Parameters)
                 .HasColumnType("jsonb");
 
-            // Настройка последовательностей для первичных ключей
+            // Настройка автоинкремента для первичных ключей через IDENTITY
             modelBuilder.Entity<Project>()
                 .Property(p => p.ProjectId)
-                .HasDefaultValueSql("nextval('seq_project_id')");
+                .UseIdentityColumn();
             modelBuilder.Entity<Scan>()
                 .Property(s => s.ScanId)
-                .HasDefaultValueSql("nextval('seq_scan_id')");
+                .UseIdentityColumn();
             modelBuilder.Entity<AnalysisResult>()
                 .Property(ar => ar.ResultId)
-                .HasDefaultValueSql("nextval('seq_result_id')");
+                .UseIdentityColumn();
 
             // Создание индексов для ускорения запросов
             modelBuilder.Entity<Scan>().HasIndex(s => s.ProjectId);

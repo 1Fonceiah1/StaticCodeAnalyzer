@@ -26,7 +26,6 @@
             <Setter Property="Height" Value="30"/>
             <Setter Property="HorizontalContentAlignment" Value="Center"/>
             <Setter Property="FontWeight" Value="Bold"/>
-            <!-- Кисть для подсветки при перетаскивании / выделении -->
             <Style.Resources>
                 <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#D32F2F"/>
             </Style.Resources>
@@ -356,23 +355,23 @@
                             </DataGrid.Resources>
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="Важность" Binding="{Binding Severity}" 
-                                                    Width="Auto" MaxWidth="150" MinWidth="80" IsReadOnly="True"/>
+                                                    Width="Auto" MinWidth="80" IsReadOnly="True"/>
                                 <DataGridTextColumn Header="Код" Binding="{Binding Code}" 
-                                                    Width="Auto" MaxWidth="120" MinWidth="70" IsReadOnly="True"/>
+                                                    Width="Auto" MinWidth="70" IsReadOnly="True"/>
                                 <DataGridTextColumn Header="Файл" Binding="{Binding FilePath}" 
-                                                    Width="Auto" MaxWidth="300" MinWidth="150" IsReadOnly="True"/>
+                                                    Width="Auto" MinWidth="150" IsReadOnly="True"/>
                                 <DataGridTextColumn Header="Класс" Binding="{Binding ContainingTypeName}" 
-                                                    Width="Auto" MaxWidth="200" MinWidth="100" IsReadOnly="True"/>
+                                                    Width="Auto" MinWidth="100" IsReadOnly="True"/>
                                 <DataGridTextColumn Header="Метод" Binding="{Binding MethodName}" 
-                                                    Width="Auto" MaxWidth="200" MinWidth="100" IsReadOnly="True"/>
+                                                    Width="Auto" MinWidth="100" IsReadOnly="True"/>
                                 <DataGridTextColumn Header="Строка" Binding="{Binding LineNumber}" 
-                                                    Width="Auto" MaxWidth="80" MinWidth="60" IsReadOnly="True"/>
+                                                    Width="Auto" MinWidth="60" IsReadOnly="True"/>
                                 <DataGridTextColumn Header="Тип" Binding="{Binding Type}" 
-                                                    Width="Auto" MaxWidth="120" MinWidth="80" IsReadOnly="True"/>
+                                                    Width="Auto" MinWidth="80" IsReadOnly="True"/>
                                 <DataGridTextColumn Header="Описание" Binding="{Binding Description}" 
-                                                    Width="Auto" MaxWidth="400" MinWidth="200" IsReadOnly="True"/>
+                                                    Width="Auto" MinWidth="200" IsReadOnly="True"/>
                                 <DataGridTextColumn Header="Предложение" Binding="{Binding Suggestion}" 
-                                                    Width="Auto" MaxWidth="400" MinWidth="200" IsReadOnly="True"/>
+                                                    Width="Auto" MinWidth="200" IsReadOnly="True"/>
                             </DataGrid.Columns>
                         </DataGrid>
                     </ScrollViewer>
