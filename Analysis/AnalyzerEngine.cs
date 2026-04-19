@@ -5,8 +5,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using StaticCodeAnalyzer.Models;
 using StaticCodeAnalyzer.Services;
 
@@ -42,22 +40,21 @@ namespace StaticCodeAnalyzer.Analysis
         }
 
         // Выполняет анализ одного файла по его пути
-        public async Task<List<AnalysisIssue>> AnalyzeFileAsync(string filePath)
+        public List<AnalysisIssue> AnalyzeFile(string filePath)
         {
             string directory = Path.GetDirectoryName(filePath);
             if (string.IsNullOrEmpty(directory))
                 throw new ArgumentException("Не удалось определить директорию файла.");
 
-            ProjectContext context = await ProjectContext.CreateAsync(directory);
-            return await AnalyzeProjectAsync(context, new[] { filePath });
+            ProjectContext context = ProjectContext.Create(directory);
+            return AnalyzeProject(context, new[] { filePath });
         }
 
         // Выполняет анализ проекта или набора файлов
-        public async Task<List<AnalysisIssue>> AnalyzeProjectAsync(
+        public List<AnalysisIssue> AnalyzeProject(
             ProjectContext context,
             IEnumerable<string> filesToAnalyze = null,
-            IProgress<int> progress = null,
-            CancellationToken cancellationToken = default)
+            IProgress<int> progress = null)
         {
             List<AnalysisIssue> issues = new List<AnalysisIssue>();
             List<string> files = filesToAnalyze?.ToList() ?? context.SourceFiles;
@@ -69,19 +66,17 @@ namespace StaticCodeAnalyzer.Analysis
 
             foreach (string filePath in files)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-
                 SyntaxTree syntaxTree = compilation.SyntaxTrees.FirstOrDefault(t => t.FilePath == filePath);
                 if (syntaxTree == null) continue;
 
                 SemanticModel semanticModel = compilation.GetSemanticModel(syntaxTree);
-                SyntaxNode root = await syntaxTree.GetRootAsync(cancellationToken);
+                SyntaxNode root = syntaxTree.GetRoot();
 
                 foreach (IAnalyzerRule rule in _rules)
                 {
                     try
                     {
-                        List<AnalysisIssue> ruleIssues = await rule.AnalyzeAsync(root, semanticModel, filePath);
+                        List<AnalysisIssue> ruleIssues = rule.Analyze(root, semanticModel, filePath);
                         issues.AddRange(ruleIssues);
                     }
                     catch (Exception ex)

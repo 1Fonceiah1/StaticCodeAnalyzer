@@ -5,8 +5,6 @@ using Microsoft.CodeAnalysis.Editing;
 using Microsoft.CodeAnalysis.FindSymbols;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace StaticCodeAnalyzer.Analysis.Refactoring
 {
@@ -14,11 +12,11 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
     {
         public IEnumerable<string> TargetIssueCodes => new[] { "ASY001" };
 
-        public async Task<Document> ApplyAsync(Document document, CancellationToken cancellationToken)
+        public Document Apply(Document document)
         {
-            SyntaxNode root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
-            SemanticModel semanticModel = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
-            DocumentEditor editor = await DocumentEditor.CreateAsync(document, cancellationToken).ConfigureAwait(false);
+            SyntaxNode root = document.GetSyntaxRootAsync().GetAwaiter().GetResult();
+            SemanticModel semanticModel = document.GetSemanticModelAsync().GetAwaiter().GetResult();
+            DocumentEditor editor = DocumentEditor.CreateAsync(document).GetAwaiter().GetResult();
             bool changed = false;
             bool needsTaskUsing = false;
             Solution solution = document.Project.Solution;
@@ -59,11 +57,11 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                         newMethod = newMethod.AddModifiers(SyntaxFactory.Token(SyntaxKind.AsyncKeyword));
 
                     // Корректирует возвращаемый тип
-                    ITypeSymbol? returnTypeSymbol = semanticModel.GetTypeInfo(method.ReturnType, cancellationToken).Type;
+                    ITypeSymbol? returnTypeSymbol = semanticModel.GetTypeInfo(method.ReturnType).Type;
                     if (returnTypeSymbol?.SpecialType == SpecialType.System_Void)
                     {
                         // Проверяет возможность безопасной замены void на Task
-                        bool hasExternalReferences = await HasExternalReferencesAsync(method, semanticModel, solution, cancellationToken).ConfigureAwait(false);
+                        bool hasExternalReferences = HasExternalReferences(method, semanticModel, solution);
                         if (!hasExternalReferences)
                         {
                             newMethod = newMethod.WithReturnType(SyntaxFactory.ParseTypeName("Task"));
@@ -107,7 +105,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             // Добавляет директиву using System.Threading.Tasks, если она отсутствует
             if (needsTaskUsing)
             {
-                CompilationUnitSyntax? finalRoot = await resultDoc.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false) as CompilationUnitSyntax;
+                CompilationUnitSyntax? finalRoot = resultDoc.GetSyntaxRootAsync().GetAwaiter().GetResult() as CompilationUnitSyntax;
                 if (finalRoot != null && !finalRoot.Usings.Any(u => u.Name?.ToString() == "System.Threading.Tasks"))
                 {
                     UsingDirectiveSyntax usingTask = SyntaxFactory.UsingDirective(SyntaxFactory.ParseName("System.Threading.Tasks"));
@@ -119,12 +117,12 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             return resultDoc;
         }
 
-        private async Task<bool> HasExternalReferencesAsync(MethodDeclarationSyntax method, SemanticModel semanticModel, Solution solution, CancellationToken ct)
+        private bool HasExternalReferences(MethodDeclarationSyntax method, SemanticModel semanticModel, Solution solution)
         {
-            IMethodSymbol? methodSymbol = semanticModel.GetDeclaredSymbol(method, ct);
+            IMethodSymbol? methodSymbol = semanticModel.GetDeclaredSymbol(method);
             if (methodSymbol == null) return false;
 
-            IEnumerable<ReferencedSymbol> references = await SymbolFinder.FindReferencesAsync(methodSymbol, solution, ct).ConfigureAwait(false);
+            IEnumerable<ReferencedSymbol> references = SymbolFinder.FindReferencesAsync(methodSymbol, solution).GetAwaiter().GetResult();
             // Исключает объявление самого метода
             IEnumerable<ReferenceLocation> referencingLocations = references.SelectMany(r => r.Locations)
                                                   .Where(loc => !loc.IsImplicit && loc.Location.SourceSpan != method.Span);

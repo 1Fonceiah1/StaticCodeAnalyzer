@@ -25,7 +25,6 @@ namespace StaticCodeAnalyzer.Analysis
                 new RefactoringRule_EmptyCatchBlock(),
                 new RefactoringRule_MagicNumbers(),
                 new RefactoringRule_SimplifyDeadCode(),
-                new RefactoringRule_FixUndefinedIdentifier(),
                 new RefactoringRule_NamingConvention(),
                 new RefactoringRule_RenameLocalVariables(),
                 new RefactoringRule_EncapsulateFields(),
@@ -36,7 +35,9 @@ namespace StaticCodeAnalyzer.Analysis
                 new RefactoringRule_SeparateOutput(),
                 new RefactoringRule_SplitMethodByResponsibility(),
                 new RefactoringRule_AsyncAwait(),
-                new RefactoringRule_UnusedVariable()
+                new RefactoringRule_UnusedVariable(),
+                new RefactoringRule_GotoStatement(),
+                new RefactoringRule_SecurityVulnerabilities()
             };
 
             _workspace = new AdhocWorkspace();
@@ -67,25 +68,25 @@ namespace StaticCodeAnalyzer.Analysis
                 "REN001",
                 "SEP001",
                 "SPL001",
-                "UND001",
                 "THR001",
                 "CPX001",
-                "DEAD001", "SIM001", "DEAD002", "DEAD003", "DEAD004"
+                "DEAD001", "SIM001", "DEAD002", "DEAD003", "DEAD004",
+                "GOTO001",
+                "SEC001", "SEC002"
             };
         }
 
         // Применяет рефакторинг к строке кода (упрощённая версия без выбора правил)
-        public async Task<string> ApplyRefactoringAsync(string code)
+        public string ApplyRefactoring(string code)
         {
-            (string newCode, bool success, List<string> errors) = await ApplyRefactoringWithRollbackAsync(code, null, CancellationToken.None);
+            (string newCode, bool success, List<string> errors) = ApplyRefactoringWithRollback(code, null);
             return newCode;
         }
 
         // Основной метод: применяет рефакторинг с возможностью отката, возвращает изменённый код и ошибки
-        public async Task<(string NewCode, bool Success, List<string> Errors)> ApplyRefactoringWithRollbackAsync(
+        public (string NewCode, bool Success, List<string> Errors) ApplyRefactoringWithRollback(
             string code,
             HashSet<string> allowedRuleCodes = null,
-            CancellationToken cancellationToken = default,
             IProgress<int> progress = null)
         {
             lock (_workspaceLock)
@@ -114,11 +115,9 @@ namespace StaticCodeAnalyzer.Analysis
 
             foreach (IRefactoringRule rule in rulesToApply)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-
                 try
                 {
-                    Document newDocument = await rule.ApplyAsync(document, cancellationToken).ConfigureAwait(false);
+                    Document newDocument = rule.Apply(document);
                     if (newDocument != document)
                     {
                         document = newDocument;
@@ -138,7 +137,7 @@ namespace StaticCodeAnalyzer.Analysis
             if (!anyChange && errors.Any())
                 return (code, false, errors);
 
-            SyntaxNode finalRoot = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
+            SyntaxNode finalRoot = document.GetSyntaxRootAsync().GetAwaiter().GetResult();
             if (finalRoot != null)
             {
                 SyntaxNode normalized = finalRoot.NormalizeWhitespace(indentation: "    ", elasticTrivia: true, eol: "\n");

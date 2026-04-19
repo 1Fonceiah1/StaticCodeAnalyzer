@@ -1,4 +1,3 @@
-using System.Threading.Tasks;
 using FluentAssertions;
 using Xunit;
 using StaticCodeAnalyzer.Analysis;
@@ -9,7 +8,7 @@ namespace StaticCodeAnalyzer.Tests.Integration
     public class CrossFileAnalysisTests
     {
         [Fact]
-        public async Task AnalyzeProject_ShouldResolveSymbolsAcrossFiles()
+        public void AnalyzeProject_ShouldResolveSymbolsAcrossFiles()
         {
             string code1 = @"
                 namespace TestNamespace
@@ -32,10 +31,10 @@ namespace StaticCodeAnalyzer.Tests.Integration
                     }
                 }";
             var files = new[] { ("file1.cs", code1), ("file2.cs", code2) };
-            ProjectContext context = await TestHelpers.CreateTestProjectContextAsync(files);
+            ProjectContext context = TestHelpers.CreateTestProjectContext(files);
 
             AnalyzerEngine engine = new AnalyzerEngine();
-            List<AnalysisIssue> issues = await engine.AnalyzeProjectAsync(context);
+            List<AnalysisIssue> issues = engine.AnalyzeProject(context);
 
             issues.Should().NotContain(i => i.Code == "UND001" && i.Description.Contains("ClassA"));
             issues.Should().NotContain(i => i.Code == "UND001" && i.Description.Contains("GetValue"));

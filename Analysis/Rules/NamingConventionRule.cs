@@ -3,7 +3,6 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading.Tasks;
 using StaticCodeAnalyzer.Models;
 
 namespace StaticCodeAnalyzer.Analysis
@@ -11,7 +10,7 @@ namespace StaticCodeAnalyzer.Analysis
     // Проверяет соглашения об именовании: методы в PascalCase, приватные поля в _camelCase
     public class NamingConventionRule : IAnalyzerRule
     {
-        public Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
+        public List<AnalysisIssue> Analyze(SyntaxNode root, SemanticModel semanticModel, string filePath)
         {
             List<AnalysisIssue> issues = new List<AnalysisIssue>();
 
@@ -79,7 +78,7 @@ namespace StaticCodeAnalyzer.Analysis
                 }
             }
 
-            return Task.FromResult(issues);
+            return issues;
         }
 
         // Проверяет, соответствует ли имя соглашению PascalCase

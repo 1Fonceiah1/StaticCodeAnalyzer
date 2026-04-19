@@ -2,9 +2,8 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Rename;
+using System.Collections.Generic;
 using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace StaticCodeAnalyzer.Analysis.Refactoring
 {
@@ -12,10 +11,10 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
     {
         public IEnumerable<string> TargetIssueCodes => new[] { "NAM001", "NAM002" };
 
-        public async Task<Document> ApplyAsync(Document document, CancellationToken cancellationToken)
+        public Document Apply(Document document)
         {
-            SyntaxNode root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
-            SemanticModel semanticModel = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
+            SyntaxNode root = document.GetSyntaxRootAsync().GetAwaiter().GetResult();
+            SemanticModel semanticModel = document.GetSemanticModelAsync().GetAwaiter().GetResult();
             Solution solution = document.Project.Solution;
             bool changed = false;
 
@@ -23,21 +22,21 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             List<MethodDeclarationSyntax> methods = root.DescendantNodes().OfType<MethodDeclarationSyntax>().ToList();
             foreach (MethodDeclarationSyntax method in methods)
             {
-                IMethodSymbol? symbol = semanticModel.GetDeclaredSymbol(method, cancellationToken);
+                IMethodSymbol? symbol = semanticModel.GetDeclaredSymbol(method);
                 if (symbol == null) continue;
-                
+
                 // Пропускает переопределённые методы и явные реализации интерфейсов
                 if (symbol.IsOverride || symbol.ExplicitInterfaceImplementations.Any()) continue;
-                
+
                 string current = symbol.Name;
                 if (!IsPascalCase(current))
                 {
                     string target = ToPascalCase(current);
                     TypeDeclarationSyntax? containingType = method.FirstAncestorOrSelf<TypeDeclarationSyntax>();
-                    if (containingType != null && HasNameConflict(target, containingType, semanticModel, cancellationToken))
+                    if (containingType != null && HasNameConflict(target, containingType))
                         continue;
-                    
-                    solution = await Renamer.RenameSymbolAsync(solution, symbol, new SymbolRenameOptions(), target, cancellationToken);
+
+                    solution = Renamer.RenameSymbolAsync(solution, symbol, new SymbolRenameOptions(), target).GetAwaiter().GetResult();
                     changed = true;
                 }
             }
@@ -50,7 +49,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 
             foreach (VariableDeclaratorSyntax varDecl in fields)
             {
-                ISymbol? symbol = semanticModel.GetDeclaredSymbol(varDecl, cancellationToken);
+                ISymbol? symbol = semanticModel.GetDeclaredSymbol(varDecl);
                 if (symbol == null) continue;
 
                 string current = symbol.Name;
@@ -58,10 +57,10 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                 {
                     string target = ToPrivateFieldConvention(current);
                     TypeDeclarationSyntax? containingType = varDecl.FirstAncestorOrSelf<TypeDeclarationSyntax>();
-                    if (containingType != null && HasNameConflict(target, containingType, semanticModel, cancellationToken))
+                    if (containingType != null && HasNameConflict(target, containingType))
                         continue;
-                    
-                    solution = await Renamer.RenameSymbolAsync(solution, symbol, new SymbolRenameOptions(), target, cancellationToken);
+
+                    solution = Renamer.RenameSymbolAsync(solution, symbol, new SymbolRenameOptions(), target).GetAwaiter().GetResult();
                     changed = true;
                 }
             }
@@ -71,18 +70,18 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 
         // Проверяет, соответствует ли имя соглашению PascalCase
         private bool IsPascalCase(string n) => n.Length > 0 && char.IsUpper(n[0]) && !n.Contains('_');
-        
+
         // Преобразует имя в PascalCase
         private string ToPascalCase(string n) => char.ToUpperInvariant(n[0]) + (n.Length > 1 ? n.Substring(1) : "");
-        
+
         // Проверяет соглашение для приватных полей: начинается с "_" и далее строчная буква
         private bool IsPrivateFieldConvention(string n) => n.StartsWith("_") && n.Length > 1 && char.IsLower(n[1]);
-        
+
         // Преобразует имя в формат _camelCase
         private string ToPrivateFieldConvention(string n) => n.StartsWith("_") ? n : "_" + char.ToLowerInvariant(n[0]) + (n.Length > 1 ? n.Substring(1) : "");
-        
+
         // Проверяет, существует ли уже член с заданным именем в типе
-        private bool HasNameConflict(string newName, TypeDeclarationSyntax typeDecl, SemanticModel model, CancellationToken ct)
+        private bool HasNameConflict(string newName, TypeDeclarationSyntax typeDecl)
         {
             return typeDecl.Members
                 .OfType<MemberDeclarationSyntax>()

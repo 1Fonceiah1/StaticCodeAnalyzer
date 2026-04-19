@@ -1,4 +1,3 @@
-using System.Threading.Tasks;
 using FluentAssertions;
 using Xunit;
 using StaticCodeAnalyzer.Analysis.Refactoring;
@@ -9,7 +8,7 @@ namespace StaticCodeAnalyzer.Tests.Refactoring
     public class RefactoringRule_MagicNumbersTests
     {
         [Fact]
-        public async Task ApplyAsync_ShouldReplaceMagicNumberWithConst()
+        public void Apply_ShouldReplaceMagicNumberWithConst()
         {
             // Подготавливает код с повторяющимся магическим числом 42
             string input = @"
@@ -23,7 +22,7 @@ namespace StaticCodeAnalyzer.Tests.Refactoring
                 }";
 
             // Применяет рефакторинг
-            string result = await TestHelpers.ApplyRefactoringAsync<RefactoringRule_MagicNumbers>(input);
+            string result = TestHelpers.ApplyRefactoring<RefactoringRule_MagicNumbers>(input);
 
             // Проверяет, что создана приватная константа и оба использования заменены
             result.Should().Contain("private const int");
@@ -34,7 +33,7 @@ namespace StaticCodeAnalyzer.Tests.Refactoring
         }
 
         [Fact]
-        public async Task ApplyAsync_ShouldDetectCorrectTypeForDouble()
+        public void Apply_ShouldDetectCorrectTypeForDouble()
         {
             // Подготавливает код с числом с плавающей точкой
             string input = @"
@@ -47,7 +46,7 @@ namespace StaticCodeAnalyzer.Tests.Refactoring
                 }";
 
             // Применяет рефакторинг
-            string result = await TestHelpers.ApplyRefactoringAsync<RefactoringRule_MagicNumbers>(input);
+            string result = TestHelpers.ApplyRefactoring<RefactoringRule_MagicNumbers>(input);
 
             // Проверяет, что создана константа типа double
             result.Should().Contain("private const double");
@@ -56,7 +55,7 @@ namespace StaticCodeAnalyzer.Tests.Refactoring
         }
 
         [Fact]
-        public async Task ApplyAsync_ShouldNotReplaceAllowedNumbers()
+        public void Apply_ShouldNotReplaceAllowedNumbers()
         {
             // Подготавливает код с разрешёнными числами 0 и 1
             string input = @"
@@ -70,7 +69,7 @@ namespace StaticCodeAnalyzer.Tests.Refactoring
                 }";
 
             // Применяет рефакторинг
-            string result = await TestHelpers.ApplyRefactoringAsync<RefactoringRule_MagicNumbers>(input);
+            string result = TestHelpers.ApplyRefactoring<RefactoringRule_MagicNumbers>(input);
 
             // Проверяет, что константы не создавались
             result.Should().NotContain("private const");

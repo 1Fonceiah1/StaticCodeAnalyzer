@@ -4,8 +4,6 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Editing;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace StaticCodeAnalyzer.Analysis.Refactoring
 {
@@ -13,11 +11,11 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
     {
         public IEnumerable<string> TargetIssueCodes => new[] { "DUP002" };
 
-        public async Task<Document> ApplyAsync(Document document, CancellationToken cancellationToken)
+        public Document Apply(Document document)
         {
-            SyntaxNode root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
-            SemanticModel semanticModel = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
-            DocumentEditor editor = await DocumentEditor.CreateAsync(document, cancellationToken).ConfigureAwait(false);
+            SyntaxNode root = document.GetSyntaxRootAsync().GetAwaiter().GetResult();
+            SemanticModel semanticModel = document.GetSemanticModelAsync().GetAwaiter().GetResult();
+            DocumentEditor editor = DocumentEditor.CreateAsync(document).GetAwaiter().GetResult();
             bool changed = false;
 
             List<MethodDeclarationSyntax> methods = root.DescendantNodes().OfType<MethodDeclarationSyntax>().Where(m => m.Body != null).ToList();
@@ -31,7 +29,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                 {
                     foreach (InvocationExpressionSyntax inv in stmt.DescendantNodes().OfType<InvocationExpressionSyntax>())
                     {
-                        IMethodSymbol? symbol = semanticModel.GetSymbolInfo(inv, cancellationToken).Symbol as IMethodSymbol;
+                        IMethodSymbol? symbol = semanticModel.GetSymbolInfo(inv).Symbol as IMethodSymbol;
                         if (symbol == null || symbol.ReturnsVoid) continue;
 
                         string sig = $"{symbol.ContainingType?.ToDisplayString()}.{symbol.Name}({string.Join(",", symbol.Parameters.Select(p => p.Type.ToDisplayString()))})";
@@ -51,7 +49,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                     StatementSyntax? firstStmt = first.FirstAncestorOrSelf<StatementSyntax>();
                     if (firstStmt == null) continue;
 
-                    IMethodSymbol? methodSym = semanticModel.GetSymbolInfo(first, cancellationToken).Symbol as IMethodSymbol;
+                    IMethodSymbol? methodSym = semanticModel.GetSymbolInfo(first).Symbol as IMethodSymbol;
                     if (methodSym == null) continue;
 
                     // Формирует уникальное имя для переменной кеша

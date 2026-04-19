@@ -4,8 +4,6 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Editing;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace StaticCodeAnalyzer.Analysis.Refactoring
 {
@@ -13,11 +11,11 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
     {
         public IEnumerable<string> TargetIssueCodes => new[] { "DUP001" };
 
-        public async Task<Document> ApplyAsync(Document document, CancellationToken cancellationToken)
+        public Document Apply(Document document)
         {
-            SyntaxNode root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
-            SemanticModel semanticModel = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
-            DocumentEditor editor = await DocumentEditor.CreateAsync(document, cancellationToken).ConfigureAwait(false);
+            SyntaxNode root = document.GetSyntaxRootAsync().GetAwaiter().GetResult();
+            SemanticModel semanticModel = document.GetSemanticModelAsync().GetAwaiter().GetResult();
+            DocumentEditor editor = DocumentEditor.CreateAsync(document).GetAwaiter().GetResult();
             bool changed = false;
 
             List<MethodDeclarationSyntax> methods = root.DescendantNodes()
@@ -31,7 +29,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                 {
                     // Проверяет эквивалентность тел и сигнатур методов
                     if (AreBodiesEquivalent(methods[i].Body, methods[j].Body) && 
-                        AreSignaturesEquivalent(methods[i], methods[j], semanticModel, cancellationToken))
+                        AreSignaturesEquivalent(methods[i], methods[j], semanticModel))
                     {
                         MethodDeclarationSyntax targetMethod = methods[j];
                         MethodDeclarationSyntax sourceMethod = methods[i];
@@ -45,7 +43,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                             continue;
 
                         // Получает символ целевого метода
-                        IMethodSymbol? methodSymbol = semanticModel.GetDeclaredSymbol(targetMethod, cancellationToken) as IMethodSymbol;
+                        IMethodSymbol? methodSymbol = semanticModel.GetDeclaredSymbol(targetMethod);
                         if (methodSymbol == null) continue;
 
                         // Формирует список аргументов из параметров целевого метода
@@ -99,10 +97,10 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
         }
 
         // Сравнивает сигнатуры методов: возвращаемый тип, модификаторы, параметры
-        private bool AreSignaturesEquivalent(MethodDeclarationSyntax m1, MethodDeclarationSyntax m2, SemanticModel model, CancellationToken ct)
+        private bool AreSignaturesEquivalent(MethodDeclarationSyntax m1, MethodDeclarationSyntax m2, SemanticModel model)
         {
-            IMethodSymbol? symbol1 = model.GetDeclaredSymbol(m1, ct);
-            IMethodSymbol? symbol2 = model.GetDeclaredSymbol(m2, ct);
+            IMethodSymbol? symbol1 = model.GetDeclaredSymbol(m1);
+            IMethodSymbol? symbol2 = model.GetDeclaredSymbol(m2);
             if (symbol1 == null || symbol2 == null) return false;
 
             // Сравнивает возвращаемый тип

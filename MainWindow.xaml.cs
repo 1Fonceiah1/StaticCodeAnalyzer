@@ -4,8 +4,6 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.IO;
 using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -26,7 +24,6 @@ namespace StaticCodeAnalyzer
         private string _currentPath;
         private bool _isFolder;
         private List<FileTreeNode> _allRootNodes = new List<FileTreeNode>();
-        private CancellationTokenSource _cancellationTokenSource;
         private CollectionViewSource _resultsViewSource;
 
         public MainWindow()
@@ -45,7 +42,7 @@ namespace StaticCodeAnalyzer
         }
 
         // Открывает диалог выбора файла и загружает его в дерево
-        private async void OpenFile_Click(object sender, RoutedEventArgs e)
+        private void OpenFile_Click(object sender, RoutedEventArgs e)
         {
             OpenFileDialog dialog = new OpenFileDialog();
             dialog.Filter = "C# файлы (*.cs)|*.cs|Все файлы (*.*)|*.*";
@@ -53,28 +50,28 @@ namespace StaticCodeAnalyzer
             {
                 _currentPath = dialog.FileName;
                 _isFolder = false;
-                await LoadFileTreeAsync(_currentPath);
+                LoadFileTree(_currentPath);
                 StatusText.Text = $"Загружен файл: {Path.GetFileName(_currentPath)}";
                 Logger.Log("OpenFile", $"Путь: {_currentPath}");
             }
         }
 
         // Открывает диалог выбора папки и загружает её содержимое в дерево
-        private async void OpenFolder_Click(object sender, RoutedEventArgs e)
+        private void OpenFolder_Click(object sender, RoutedEventArgs e)
         {
             OpenFolderDialog dialog = new OpenFolderDialog();
             if (dialog.ShowDialog() == true)
             {
                 _currentPath = dialog.FolderName;
                 _isFolder = true;
-                await LoadFolderTreeAsync(_currentPath);
+                LoadFolderTree(_currentPath);
                 StatusText.Text = $"Загружена папка: {_currentPath}";
                 Logger.Log("OpenFolder", $"Путь: {_currentPath}");
             }
         }
 
         // Загружает один файл в дерево (корневой узел)
-        private Task LoadFileTreeAsync(string filePath)
+        private void LoadFileTree(string filePath)
         {
             FilesTreeView.Items.Clear();
             _allRootNodes.Clear();
@@ -87,11 +84,10 @@ namespace StaticCodeAnalyzer
             };
             _allRootNodes.Add(root);
             FilesTreeView.Items.Add(root);
-            return Task.CompletedTask;
         }
 
         // Рекурсивно загружает структуру папок и файлов в дерево
-        private async Task LoadFolderTreeAsync(string folderPath)
+        private void LoadFolderTree(string folderPath)
         {
             FilesTreeView.Items.Clear();
             _allRootNodes.Clear();
@@ -102,18 +98,18 @@ namespace StaticCodeAnalyzer
                 IsFolder = true,
                 Children = new List<FileTreeNode>()
             };
-            await AddFilesToTreeAsync(root, folderPath);
+            AddFilesToTree(root, folderPath);
             _allRootNodes.Add(root);
             FilesTreeView.Items.Add(root);
         }
 
         // Рекурсивно добавляет подпапки и .cs-файлы в узел дерева
-        private async Task AddFilesToTreeAsync(FileTreeNode parent, string directory)
+        private void AddFilesToTree(FileTreeNode parent, string directory)
         {
             try
             {
-                string[] directories = await Task.Run(() => Directory.GetDirectories(directory));
-                string[] files = await Task.Run(() => Directory.GetFiles(directory, "*.cs"));
+                string[] directories = Directory.GetDirectories(directory);
+                string[] files = Directory.GetFiles(directory, "*.cs");
 
                 foreach (string dir in directories)
                 {
@@ -125,7 +121,7 @@ namespace StaticCodeAnalyzer
                         Children = new List<FileTreeNode>()
                     };
                     parent.Children.Add(subNode);
-                    await AddFilesToTreeAsync(subNode, dir);
+                    AddFilesToTree(subNode, dir);
                 }
 
                 foreach (string file in files)
@@ -161,17 +157,13 @@ namespace StaticCodeAnalyzer
         }
 
         // Запускает анализ для выбранных файлов (исключая помеченные)
-        private async void Analyze_Click(object sender, RoutedEventArgs e)
+        private void Analyze_Click(object sender, RoutedEventArgs e)
         {
             if (string.IsNullOrEmpty(_currentPath) && _allRootNodes.Count == 0)
             {
                 MessageBox.Show("Сначала откройте файл или папку.", "Нет данных", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
-
-            _cancellationTokenSource?.Cancel();
-            _cancellationTokenSource = new CancellationTokenSource();
-            CancellationToken token = _cancellationTokenSource.Token;
 
             StatusText.Text = "Анализ...";
             Mouse.OverrideCursor = Cursors.Wait;
@@ -188,26 +180,21 @@ namespace StaticCodeAnalyzer
                     return;
                 }
 
-                List<AnalysisIssue> issues = await Task.Run(() => _analysisService.AnalyzeFiles(filesToAnalyze, null, token), token);
+                List<AnalysisIssue> issues = _analysisService.AnalyzeFiles(filesToAnalyze, null);
                 _currentIssues = issues;
 
                 if (_analysisService.Engine.LastErrors.Any())
                 {
-                    string errorList = string.Join("\n", _analysisService.Engine.LastErrors.Select(e => $"{e.RuleName} в {e.FilePath}: {e.ErrorMessage}"));
+                    string errorList = string.Join("\n", _analysisService.Engine.LastErrors.Select(er => $"{er.RuleName} в {er.FilePath}: {er.ErrorMessage}"));
                     MessageBox.Show($"Некоторые правила завершились с ошибками:\n{errorList}", "Ошибки анализа", MessageBoxButton.OK, MessageBoxImage.Warning);
                 }
 
-                await SaveAnalysisResultsToDbAsync(issues, _currentPath, _isFolder);
+                SaveAnalysisResultsToDb(issues, _currentPath, _isFolder);
 
                 _resultsViewSource.Source = _currentIssues;
                 ResultsGrid.ItemsSource = _resultsViewSource.View;
                 StatusText.Text = $"Анализ завершён. Найдено {issues.Count} проблем.";
                 Logger.Log("AnalyzeEnd", $"Найдено проблем: {issues.Count}");
-            }
-            catch (OperationCanceledException)
-            {
-                StatusText.Text = "Анализ отменён.";
-                Logger.Log("AnalyzeCancel", "Пользователь отменил анализ");
             }
             catch (Exception ex)
             {
@@ -218,13 +205,11 @@ namespace StaticCodeAnalyzer
             finally
             {
                 Mouse.OverrideCursor = null;
-                _cancellationTokenSource?.Dispose();
-                _cancellationTokenSource = null;
             }
         }
 
         // Открывает окно вставки кода для анализа
-        private async void PasteCode_Click(object sender, RoutedEventArgs e)
+        private void PasteCode_Click(object sender, RoutedEventArgs e)
         {
             CodeInputWindow inputWindow = new CodeInputWindow();
             inputWindow.Owner = this;
@@ -237,11 +222,11 @@ namespace StaticCodeAnalyzer
         }
 
         // Сохраняет результаты анализа в базу данных
-        private async Task SaveAnalysisResultsToDbAsync(List<AnalysisIssue> issues, string path, bool isFolder)
+        private void SaveAnalysisResultsToDb(List<AnalysisIssue> issues, string path, bool isFolder)
         {
             try
             {
-                Project project = await _repository.GetOrCreateProjectAsync(path, isFolder ? Path.GetFileName(path) : Path.GetFileNameWithoutExtension(path));
+                Project project = _repository.GetOrCreateProject(path, isFolder ? Path.GetFileName(path) : Path.GetFileNameWithoutExtension(path));
                 Scan scan = new Scan
                 {
                     ProjectId = project.ProjectId,
@@ -251,7 +236,7 @@ namespace StaticCodeAnalyzer
                     TotalFilesScanned = issues.Select(i => i.FilePath).Distinct().Count(),
                     TotalIssuesFound = issues.Count
                 };
-                await _repository.AddScanAsync(scan);
+                _repository.AddScan(scan);
 
                 List<AnalysisResult> results = issues.Select(i => new AnalysisResult
                 {
@@ -269,8 +254,8 @@ namespace StaticCodeAnalyzer
                     CreatedAt = DateTime.Now
                 }).ToList();
 
-                await _repository.AddAnalysisResultsAsync(results);
-                await _repository.SaveChangesAsync();
+                _repository.AddAnalysisResults(results);
+                _repository.SaveChanges();
             }
             catch (Exception ex)
             {
@@ -388,7 +373,6 @@ namespace StaticCodeAnalyzer
         // Отменяет анализ и освобождает ресурсы при закрытии окна
         private void MainWindow_Closing(object sender, CancelEventArgs e)
         {
-            _cancellationTokenSource?.Cancel();
             _repository.Dispose();
         }
     }

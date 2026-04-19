@@ -3,7 +3,6 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading.Tasks;
 using StaticCodeAnalyzer.Models;
 
 namespace StaticCodeAnalyzer.Analysis
@@ -11,7 +10,7 @@ namespace StaticCodeAnalyzer.Analysis
     // Выявляет различные формы мёртвого и избыточного кода
     public class DeadCodeRule : IAnalyzerRule
     {
-        public Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
+        public List<AnalysisIssue> Analyze(SyntaxNode root, SemanticModel semanticModel, string filePath)
         {
             List<AnalysisIssue> issues = new List<AnalysisIssue>();
 
@@ -99,7 +98,7 @@ namespace StaticCodeAnalyzer.Analysis
             foreach (IfStatementSyntax ifStmt in selfAssignIfs)
                 AddIssue(ifStmt, ifStmt.IfKeyword.GetLocation(), "DEAD001", "Бессмысленный if, можно заменить на присваивание.", issues, filePath);
 
-            return Task.FromResult(issues);
+            return issues;
         }
 
         private void AddIssue(SyntaxNode node, Microsoft.CodeAnalysis.Location? location, string code, string description, List<AnalysisIssue> issues, string filePath)

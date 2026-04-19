@@ -3,7 +3,6 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading.Tasks;
 using StaticCodeAnalyzer.Models;
 
 namespace StaticCodeAnalyzer.Analysis
@@ -18,7 +17,7 @@ namespace StaticCodeAnalyzer.Analysis
             "0d", "1d", "0m", "1m", "true", "false", "null"
         };
 
-        public Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
+        public List<AnalysisIssue> Analyze(SyntaxNode root, SemanticModel semanticModel, string filePath)
         {
             List<AnalysisIssue> issues = new List<AnalysisIssue>();
             IEnumerable<LiteralExpressionSyntax> literals = root.DescendantNodes()
@@ -51,7 +50,7 @@ namespace StaticCodeAnalyzer.Analysis
                 }
             }
 
-            return Task.FromResult(issues);
+            return issues;
         }
 
         // Проверяет, разрешён ли литерал

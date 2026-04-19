@@ -5,8 +5,6 @@ using Microsoft.CodeAnalysis.Editing;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace StaticCodeAnalyzer.Analysis.Refactoring
 {
@@ -14,11 +12,11 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
     {
         public IEnumerable<string> TargetIssueCodes => new[] { "MAG001" };
 
-        public async Task<Document> ApplyAsync(Document document, CancellationToken cancellationToken)
+        public Document Apply(Document document)
         {
-            SyntaxNode root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
-            SemanticModel semanticModel = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
-            DocumentEditor editor = await DocumentEditor.CreateAsync(document, cancellationToken).ConfigureAwait(false);
+            SyntaxNode root = document.GetSyntaxRootAsync().GetAwaiter().GetResult();
+            SemanticModel semanticModel = document.GetSemanticModelAsync().GetAwaiter().GetResult();
+            DocumentEditor editor = DocumentEditor.CreateAsync(document).GetAwaiter().GetResult();
             bool changed = false;
 
             // Находит все числовые литералы, не являющиеся разрешёнными или находящиеся в особых контекстах
@@ -42,7 +40,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                 if (containingType == null) continue;
 
                 // Проверяет, не определена ли уже константа с таким именем
-                INamedTypeSymbol? typeSymbol = semanticModel.GetDeclaredSymbol(containingType, cancellationToken);
+                INamedTypeSymbol? typeSymbol = semanticModel.GetDeclaredSymbol(containingType);
                 if (typeSymbol?.GetMembers(constName).Any() == true) continue;
 
                 // Создаёт приватную константу

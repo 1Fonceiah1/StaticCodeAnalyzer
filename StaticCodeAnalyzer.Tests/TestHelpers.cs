@@ -3,8 +3,6 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Text;
 using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using StaticCodeAnalyzer.Analysis;
 using StaticCodeAnalyzer.Analysis.Refactoring;
 using StaticCodeAnalyzer.Models;
@@ -15,7 +13,7 @@ namespace StaticCodeAnalyzer.Tests
     public static class TestHelpers
     {
         // Анализ
-        public static async Task<List<AnalysisIssue>> AnalyzeCodeAsync<T>(string code, string filePath = "Test.cs") 
+        public static List<AnalysisIssue> AnalyzeCode<T>(string code, string filePath = "Test.cs")
             where T : IAnalyzerRule, new()
         {
             SyntaxTree tree = CSharpSyntaxTree.ParseText(code, path: filePath);
@@ -28,14 +26,14 @@ namespace StaticCodeAnalyzer.Tests
                     MetadataReference.CreateFromFile(typeof(System.Console).Assembly.Location));
 
             SemanticModel semanticModel = compilation.GetSemanticModel(tree);
-            SyntaxNode root = await tree.GetRootAsync();
+            SyntaxNode root = tree.GetRoot();
             T rule = new T();
-            
-            return await rule.AnalyzeAsync(root, semanticModel, filePath);
+
+            return rule.Analyze(root, semanticModel, filePath);
         }
 
         // Рефакторинг
-        public static async Task<string> ApplyRefactoringAsync<T>(string code) 
+        public static string ApplyRefactoring<T>(string code)
             where T : IRefactoringRule, new()
         {
             AdhocWorkspace workspace = new AdhocWorkspace();
@@ -46,17 +44,17 @@ namespace StaticCodeAnalyzer.Tests
                     MetadataReference.CreateFromFile(typeof(System.Threading.Tasks.Task).Assembly.Location),
                     MetadataReference.CreateFromFile(typeof(System.Console).Assembly.Location)
                 });
-            
+
             Document document = workspace.AddDocument(project.Id, "Test.cs", SourceText.From(code));
             T rule = new T();
-            
-            Document resultDoc = await rule.ApplyAsync(document, CancellationToken.None);
-            SyntaxNode root = await resultDoc.GetSyntaxRootAsync();
+
+            Document resultDoc = rule.Apply(document);
+            SyntaxNode root = resultDoc.GetSyntaxRootAsync().Result;
             return root?.NormalizeWhitespace().ToFullString() ?? code;
         }
 
         // Кросс-файловое тестирование
-        public static async Task<ProjectContext> CreateTestProjectContextAsync(IEnumerable<(string FileName, string Code)> files)
+        public static ProjectContext CreateTestProjectContext(IEnumerable<(string FileName, string Code)> files)
         {
             List<SyntaxTree> syntaxTrees = new List<SyntaxTree>();
             List<string> filePaths = new List<string>();

@@ -1,4 +1,3 @@
-using System.Threading.Tasks;
 using FluentAssertions;
 using Xunit;
 using StaticCodeAnalyzer.Analysis;
@@ -9,7 +8,7 @@ namespace StaticCodeAnalyzer.Tests.Analysis
     public class AsyncAwaitRuleTests
     {
         [Fact]
-        public async Task AnalyzeAsync_ShouldDetectAsyncWithoutAwait()
+        public void Analyze_ShouldDetectAsyncWithoutAwait()
         {
             string code = @"
                 class Test 
@@ -20,14 +19,14 @@ namespace StaticCodeAnalyzer.Tests.Analysis
                     }
                 }";
 
-            List<AnalysisIssue> issues = await TestHelpers.AnalyzeCodeAsync<AsyncAwaitRule>(code);
+            List<AnalysisIssue> issues = TestHelpers.AnalyzeCode<AsyncAwaitRule>(code);
 
             issues.Should().ContainSingle(i => i.Code == "ASY001");
             issues.First().Description.Should().Contain("Method");
         }
 
         [Fact]
-        public async Task AnalyzeAsync_ShouldNotDetectAsyncWithAwait()
+        public void Analyze_ShouldNotDetectAsyncWithAwait()
         {
             string code = @"
                 class Test 
@@ -38,7 +37,7 @@ namespace StaticCodeAnalyzer.Tests.Analysis
                     }
                 }";
 
-            List<AnalysisIssue> issues = await TestHelpers.AnalyzeCodeAsync<AsyncAwaitRule>(code);
+            List<AnalysisIssue> issues = TestHelpers.AnalyzeCode<AsyncAwaitRule>(code);
 
             issues.Should().BeEmpty();
         }

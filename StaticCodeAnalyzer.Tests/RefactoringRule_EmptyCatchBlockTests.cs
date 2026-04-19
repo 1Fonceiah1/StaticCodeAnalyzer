@@ -1,4 +1,3 @@
-using System.Threading.Tasks;
 using FluentAssertions;
 using Xunit;
 using StaticCodeAnalyzer.Analysis.Refactoring;
@@ -9,7 +8,7 @@ namespace StaticCodeAnalyzer.Tests.Refactoring
     public class RefactoringRule_EmptyCatchBlockTests
     {
         [Fact]
-        public async Task ApplyAsync_ShouldAddCommentAndThrowToEmptyCatch()
+        public void Apply_ShouldAddCommentAndThrowToEmptyCatch()
         {
             // Подготавливает код с пустым блоком catch
             string input = @"
@@ -28,7 +27,7 @@ namespace StaticCodeAnalyzer.Tests.Refactoring
                 }";
 
             // Применяет рефакторинг
-            string result = await TestHelpers.ApplyRefactoringAsync<RefactoringRule_EmptyCatchBlock>(input);
+            string result = TestHelpers.ApplyRefactoring<RefactoringRule_EmptyCatchBlock>(input);
 
             // Проверяет, что добавлен комментарий TODO и оператор throw
             result.Should().Contain("// TODO:");

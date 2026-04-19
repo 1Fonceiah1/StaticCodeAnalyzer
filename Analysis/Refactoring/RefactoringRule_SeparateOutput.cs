@@ -4,8 +4,6 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Editing;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace StaticCodeAnalyzer.Analysis.Refactoring
 {
@@ -13,11 +11,11 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
     {
         public IEnumerable<string> TargetIssueCodes => new[] { "SEP001" };
 
-        public async Task<Document> ApplyAsync(Document document, CancellationToken cancellationToken)
+        public Document Apply(Document document)
         {
-            SyntaxNode root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
-            SemanticModel semanticModel = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
-            DocumentEditor editor = await DocumentEditor.CreateAsync(document, cancellationToken).ConfigureAwait(false);
+            SyntaxNode root = document.GetSyntaxRootAsync().GetAwaiter().GetResult();
+            SemanticModel semanticModel = document.GetSemanticModelAsync().GetAwaiter().GetResult();
+            DocumentEditor editor = DocumentEditor.CreateAsync(document).GetAwaiter().GetResult();
             bool changed = false;
 
             // Находит все вызовы Console.Write/WriteLine
@@ -81,7 +79,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                 if (arg == null) continue;
 
                 ExpressionSyntax argumentExpression = arg.Expression;
-                ITypeSymbol? argType = semanticModel.GetTypeInfo(argumentExpression, cancellationToken).Type;
+                ITypeSymbol? argType = semanticModel.GetTypeInfo(argumentExpression).Type;
                 if (argType != null && argType.SpecialType != SpecialType.System_String)
                 {
                     argumentExpression = SyntaxFactory.InvocationExpression(

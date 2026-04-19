@@ -3,7 +3,6 @@ using StaticCodeAnalyzer.Models;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading.Tasks;
 
 namespace StaticCodeAnalyzer.Data
 {
@@ -18,9 +17,9 @@ namespace StaticCodeAnalyzer.Data
         }
 
         // Возвращает существующий проект по пути или создаёт новый
-        public async Task<Project> GetOrCreateProjectAsync(string projectPath, string projectName)
+        public Project GetOrCreateProject(string projectPath, string projectName)
         {
-            Project project = await _context.Projects.FirstOrDefaultAsync(p => p.ProjectPath == projectPath);
+            Project project = _context.Projects.FirstOrDefault(p => p.ProjectPath == projectPath);
             if (project == null)
             {
                 project = new Project
@@ -31,28 +30,29 @@ namespace StaticCodeAnalyzer.Data
                     Language = "C#"
                 };
                 _context.Projects.Add(project);
-                await _context.SaveChangesAsync();
+                _context.SaveChanges();
             }
             return project;
         }
 
         // Добавляет запись о сканировании
-        public async Task AddScanAsync(Scan scan)
+        public void AddScan(Scan scan)
         {
             _context.Scans.Add(scan);
-            await _context.SaveChangesAsync();
+            _context.SaveChanges();
         }
 
         // Добавляет коллекцию результатов анализа
-        public async Task AddAnalysisResultsAsync(IEnumerable<AnalysisResult> results)
+        public void AddAnalysisResults(IEnumerable<AnalysisResult> results)
         {
-            await _context.AnalysisResults.AddRangeAsync(results);
+            _context.AnalysisResults.AddRange(results);
+            _context.SaveChanges();
         }
 
         // Сохраняет все изменения в базе данных
-        public async Task SaveChangesAsync()
+        public void SaveChanges()
         {
-            await _context.SaveChangesAsync();
+            _context.SaveChanges();
         }
 
         public void Dispose()

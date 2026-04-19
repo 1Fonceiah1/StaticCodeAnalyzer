@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Threading;
 using StaticCodeAnalyzer.Analysis;
 using StaticCodeAnalyzer.Models;
 using StaticCodeAnalyzer.Services;
@@ -32,9 +33,8 @@ namespace StaticCodeAnalyzer
             _isDirty = false;
             _goToLine = goToLine;
             CodeEditor.TextChanged += (s, e) => { _isDirty = true; SaveButton.IsEnabled = true; };
-            this.Loaded += async (s, e) => 
+            this.Loaded += async (s, e) =>
             {
-                await LoadIssuesAsync();
                 if (_goToLine.HasValue && _goToLine.Value > 0)
                 {
                     int lineIndex = _goToLine.Value - 1;
@@ -45,6 +45,7 @@ namespace StaticCodeAnalyzer
                         CodeEditor.ScrollToLine(lineIndex);
                     }
                 }
+                await LoadIssuesAsync();
             };
         }
 
@@ -55,29 +56,40 @@ namespace StaticCodeAnalyzer
             {
                 string currentCode = CodeEditor.Text;
                 string tempFile = Path.GetTempFileName() + ".cs";
-                await File.WriteAllTextAsync(tempFile, currentCode);
-                List<AnalysisIssue> issues = await _analysisService.AnalyzeFiles(new List<string> { tempFile });
-                IssuesListBox.ItemsSource = issues;
+                File.WriteAllText(tempFile, currentCode);
 
-                HashSet<string> fixableCodes = _refactoringEngine.GetFixableIssueCodes();
-                List<RuleSelection> applicableRules = issues
-                    .Where(i => fixableCodes.Contains(i.Code))
-                    .Select(i => new RuleSelection { Name = $"{i.Code} – {i.RuleName}", Code = i.Code })
-                    .Distinct()
-                    .ToList();
-                foreach (RuleSelection rule in applicableRules)
+                // Run analysis on background thread to prevent UI blocking
+                List<AnalysisIssue> issues = await Task.Run(() =>
+                    _analysisService.AnalyzeFiles(new List<string> { tempFile }));
+
+                // Update UI on dispatcher thread
+                await Dispatcher.InvokeAsync(() =>
                 {
-                    rule.IsSelected = true;
-                }
-                RulesListBox.ItemsSource = applicableRules;
-                RefactorButton.IsEnabled = applicableRules.Any();
+                    IssuesListBox.ItemsSource = issues;
+
+                    HashSet<string> fixableCodes = _refactoringEngine.GetFixableIssueCodes();
+                    List<RuleSelection> applicableRules = issues
+                        .Where(i => fixableCodes.Contains(i.Code))
+                        .Select(i => new RuleSelection { Name = $"{i.Code} – {i.RuleName}", Code = i.Code })
+                        .Distinct()
+                        .ToList();
+                    foreach (RuleSelection rule in applicableRules)
+                    {
+                        rule.IsSelected = true;
+                    }
+                    RulesListBox.ItemsSource = applicableRules;
+                    RefactorButton.IsEnabled = applicableRules.Any();
+                });
 
                 File.Delete(tempFile);
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Ошибка при анализе: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
-                RefactorButton.IsEnabled = false;
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    MessageBox.Show($"Ошибка при анализе: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+                    RefactorButton.IsEnabled = false;
+                });
             }
         }
 
@@ -103,7 +115,7 @@ namespace StaticCodeAnalyzer
             string currentCode = CodeEditor.Text;
             try
             {
-                (string newCode, bool success, List<string> errors) = await _refactoringEngine.ApplyRefactoringWithRollbackAsync(currentCode, allowedCodes);
+                (string newCode, bool success, List<string> errors) = _refactoringEngine.ApplyRefactoringWithRollback(currentCode, allowedCodes);
                 if (success && newCode != currentCode)
                 {
                     CodeEditor.Text = newCode;
@@ -128,7 +140,7 @@ namespace StaticCodeAnalyzer
         }
 
         // Сохраняет текущий код в файл
-        private async void SaveButton_Click(object sender, RoutedEventArgs e)
+        private void SaveButton_Click(object sender, RoutedEventArgs e)
         {
             string newCode = CodeEditor.Text;
             string savePath = _filePath;
@@ -142,7 +154,7 @@ namespace StaticCodeAnalyzer
                 }
                 else return;
             }
-            await File.WriteAllTextAsync(savePath, newCode);
+            File.WriteAllText(savePath, newCode);
             _originalCode = newCode;
             _isDirty = false;
             SaveButton.IsEnabled = false;

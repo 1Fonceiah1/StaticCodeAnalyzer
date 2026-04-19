@@ -2,8 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using StaticCodeAnalyzer.Analysis;
 using StaticCodeAnalyzer.Models;
 
@@ -20,7 +18,7 @@ namespace StaticCodeAnalyzer.Services
         }
 
         // Запускает анализ для списка файлов и возвращает найденные проблемы
-        public async Task<List<AnalysisIssue>> AnalyzeFiles(List<string> filePaths, IProgress<int> progress = null, CancellationToken cancellationToken = default)
+        public List<AnalysisIssue> AnalyzeFiles(List<string> filePaths, IProgress<int> progress = null)
         {
             if (filePaths == null || filePaths.Count == 0)
                 return new List<AnalysisIssue>();
@@ -29,8 +27,8 @@ namespace StaticCodeAnalyzer.Services
             if (string.IsNullOrEmpty(rootDirectory))
                 return new List<AnalysisIssue>();
 
-            ProjectContext context = await ProjectContext.CreateAsync(rootDirectory, cancellationToken);
-            return await _engine.AnalyzeProjectAsync(context, filePaths, progress, cancellationToken);
+            ProjectContext context = ProjectContext.Create(rootDirectory);
+            return _engine.AnalyzeProject(context, filePaths, progress);
         }
 
         // Свойство для доступа к движку (требуется в MainWindow для получения ошибок)

@@ -3,14 +3,12 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Rename;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace StaticCodeAnalyzer.Analysis.Refactoring
 {
     public class RefactoringRule_RenameLocalVariables : IRefactoringRule
     {
-        public IEnumerable<string> TargetIssueCodes => new[] { "NAM003", "REN001" };
+        public IEnumerable<string> TargetIssueCodes => new[] { "REN001" };
 
         // Список неинформативных имён переменных
         private static readonly HashSet<string> PoorNames = new HashSet<string>()
@@ -20,10 +18,10 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             "temp", "tmp", "data", "val", "arg", "obj", "var", "item"
         };
 
-        public async Task<Document> ApplyAsync(Document document, CancellationToken cancellationToken)
+        public Document Apply(Document document)
         {
-            SyntaxNode root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
-            SemanticModel semanticModel = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
+            SyntaxNode root = document.GetSyntaxRootAsync().GetAwaiter().GetResult();
+            SemanticModel semanticModel = document.GetSemanticModelAsync().GetAwaiter().GetResult();
             Solution solution = document.Project.Solution;
             bool changed = false;
 
@@ -35,7 +33,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
 
             // Фильтрует по неинформативным именам
             List<(VariableDeclaratorSyntax Syntax, ISymbol Symbol)> poorVars = localVars
-                .Select(v => (Syntax: v, Symbol: semanticModel.GetDeclaredSymbol(v, cancellationToken)))
+                .Select(v => (Syntax: v, Symbol: semanticModel.GetDeclaredSymbol(v)))
                 .Where(x => x.Symbol != null && PoorNames.Contains(x.Symbol.Name))
                 .ToList();
 
@@ -53,7 +51,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                     usedNames.Add(p.Identifier.Text);
                 foreach (VariableDeclaratorSyntax v in method.DescendantNodes().OfType<VariableDeclaratorSyntax>())
                 {
-                    ISymbol? sym = semanticModel.GetDeclaredSymbol(v, cancellationToken);
+                    ISymbol? sym = semanticModel.GetDeclaredSymbol(v);
                     if (sym != null)
                         usedNames.Add(sym.Name);
                 }
@@ -62,7 +60,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                 Dictionary<ISymbol, string> renameMap = new Dictionary<ISymbol, string>();
                 foreach (var item in group)
                 {
-                    string suggested = SuggestBetterName(item.Syntax, semanticModel, cancellationToken);
+                    string suggested = SuggestBetterName(item.Syntax, semanticModel);
                     if (string.IsNullOrEmpty(suggested)) continue;
 
                     string unique = suggested;
@@ -79,7 +77,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                 // Применяет переименования
                 foreach (KeyValuePair<ISymbol, string> kv in renameMap)
                 {
-                    solution = await Renamer.RenameSymbolAsync(solution, kv.Key, new SymbolRenameOptions(), kv.Value, cancellationToken);
+                    solution = Renamer.RenameSymbolAsync(solution, kv.Key, new SymbolRenameOptions(), kv.Value).GetAwaiter().GetResult();
                     changed = true;
                 }
             }
@@ -88,7 +86,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
         }
 
         // Предлагает осмысленное имя на основе контекста переменной
-        private string SuggestBetterName(VariableDeclaratorSyntax variable, SemanticModel model, CancellationToken ct)
+        private string SuggestBetterName(VariableDeclaratorSyntax variable, SemanticModel model)
         {
             string name = variable.Identifier.Text;
             VariableDeclarationSyntax? declaration = variable.Parent as VariableDeclarationSyntax;
@@ -113,7 +111,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             // По типу переменной
             if (typeSyntax != null)
             {
-                TypeInfo typeInfo = model.GetTypeInfo(typeSyntax, ct);
+                TypeInfo typeInfo = model.GetTypeInfo(typeSyntax);
                 ITypeSymbol? type = typeInfo.Type;
                 if (type != null)
                 {

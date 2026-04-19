@@ -1,5 +1,4 @@
 using System.IO;
-using System.Threading.Tasks;
 using FluentAssertions;
 using Xunit;
 using StaticCodeAnalyzer.Analysis;
@@ -10,7 +9,7 @@ namespace StaticCodeAnalyzer.Tests.Integration
     public class AnalyzerEngineIntegrationTests
     {
         [Fact]
-        public async Task AnalyzeFileAsync_ShouldDetectMultipleIssues()
+        public void AnalyzeFile_ShouldDetectMultipleIssues()
         {
             string code = @"
                 class BadClass 
@@ -36,10 +35,10 @@ namespace StaticCodeAnalyzer.Tests.Integration
                 }";
 
             string tempFile = Path.GetTempFileName() + ".cs";
-            await File.WriteAllTextAsync(tempFile, code);
+            File.WriteAllText(tempFile, code);
 
             AnalyzerEngine engine = new AnalyzerEngine();
-            List<AnalysisIssue> issues = await engine.AnalyzeFileAsync(tempFile);
+            List<AnalysisIssue> issues = engine.AnalyzeFile(tempFile);
 
             issues.Should().Contain(i => i.Code == "ENC001");
             issues.Should().Contain(i => i.Code == "ASY001");

@@ -1,8 +1,6 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 
@@ -23,14 +21,14 @@ namespace StaticCodeAnalyzer.Analysis
             Compilation = compilation;
         }
 
-        // Создаёт контекст асинхронно, сканируя все .cs-файлы в указанной директории
-        public static async Task<ProjectContext> CreateAsync(string projectPath, CancellationToken cancellationToken = default)
+        // Создаёт контекст, сканируя все .cs-файлы в указанной директории
+        public static ProjectContext Create(string projectPath)
         {
-            List<string> sourceFiles = await Task.Run(() => Directory.GetFiles(projectPath, "*.cs", SearchOption.AllDirectories).ToList(), cancellationToken);
+            List<string> sourceFiles = Directory.GetFiles(projectPath, "*.cs", SearchOption.AllDirectories).ToList();
             List<SyntaxTree> syntaxTrees = new List<SyntaxTree>();
             foreach (string file in sourceFiles)
             {
-                string code = await File.ReadAllTextAsync(file, cancellationToken);
+                string code = File.ReadAllText(file);
                 SyntaxTree tree = CSharpSyntaxTree.ParseText(code, path: file);
                 syntaxTrees.Add(tree);
             }
@@ -49,7 +47,7 @@ namespace StaticCodeAnalyzer.Analysis
         }
 
         // Возвращает семантическую модель для указанного файла (с кэшированием)
-        public async Task<SemanticModel> GetSemanticModelAsync(string filePath, CancellationToken ct = default)
+        public SemanticModel GetSemanticModel(string filePath)
         {
             lock (_semanticModelCache)
             {
@@ -66,11 +64,11 @@ namespace StaticCodeAnalyzer.Analysis
             {
                 _semanticModelCache[filePath] = model;
             }
-            return await Task.FromResult(model);
+            return model;
         }
 
         // Обновляет содержимое файла в контексте компиляции
-        public async Task UpdateFileAsync(string filePath, string newCode, CancellationToken cancellationToken = default)
+        public void UpdateFile(string filePath, string newCode)
         {
             SyntaxTree newTree = CSharpSyntaxTree.ParseText(newCode, path: filePath);
             SyntaxTree oldTree = Compilation.SyntaxTrees.FirstOrDefault(t => t.FilePath == filePath);
@@ -87,7 +85,6 @@ namespace StaticCodeAnalyzer.Analysis
                 Compilation = Compilation.AddSyntaxTrees(newTree);
                 SourceFiles.Add(filePath);
             }
-            await Task.CompletedTask;
         }
 
         // Возвращает стандартный набор метаданных, необходимых для компиляции

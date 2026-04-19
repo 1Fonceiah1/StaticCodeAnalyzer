@@ -4,8 +4,6 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Editing;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace StaticCodeAnalyzer.Analysis.Refactoring
 {
@@ -13,17 +11,17 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
     {
         public IEnumerable<string> TargetIssueCodes => new[] { "DISP001" };
 
-        public async Task<Document> ApplyAsync(Document document, CancellationToken cancellationToken)
+        public Document Apply(Document document)
         {
-            SyntaxNode root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
-            SemanticModel semanticModel = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
-            DocumentEditor editor = await DocumentEditor.CreateAsync(document, cancellationToken).ConfigureAwait(false);
+            SyntaxNode root = document.GetSyntaxRootAsync().GetAwaiter().GetResult();
+            SemanticModel semanticModel = document.GetSemanticModelAsync().GetAwaiter().GetResult();
+            DocumentEditor editor = DocumentEditor.CreateAsync(document).GetAwaiter().GetResult();
             bool changed = false;
 
             List<ClassDeclarationSyntax> classes = root.DescendantNodes().OfType<ClassDeclarationSyntax>().ToList();
             foreach (ClassDeclarationSyntax classDecl in classes)
             {
-                INamedTypeSymbol? classSymbol = semanticModel.GetDeclaredSymbol(classDecl, cancellationToken);
+                INamedTypeSymbol? classSymbol = semanticModel.GetDeclaredSymbol(classDecl);
                 if (classSymbol == null) continue;
 
                 // Проверяет, реализует ли класс уже IDisposable
@@ -37,7 +35,7 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
                 {
                     foreach (VariableDeclaratorSyntax variable in fieldDecl.Declaration.Variables)
                     {
-                        if (IsDisposable(variable, semanticModel, cancellationToken))
+                        if (IsDisposable(variable, semanticModel))
                         {
                             disposableFieldsInfo.Add(new DisposableFieldInfo
                             {
@@ -163,9 +161,9 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
             return SyntaxFactory.Block(statements);
         }
 
-        private bool IsDisposable(VariableDeclaratorSyntax variable, SemanticModel model, CancellationToken ct)
+        private bool IsDisposable(VariableDeclaratorSyntax variable, SemanticModel model)
         {
-            IFieldSymbol? symbol = model.GetDeclaredSymbol(variable, ct) as IFieldSymbol;
+            IFieldSymbol? symbol = model.GetDeclaredSymbol(variable) as IFieldSymbol;
             if (symbol?.Type == null) return false;
             return symbol.Type.SpecialType == SpecialType.System_IDisposable ||
                    symbol.Type.Interfaces.Any(i => i.Name == "IDisposable");

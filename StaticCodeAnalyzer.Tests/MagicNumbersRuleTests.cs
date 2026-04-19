@@ -1,4 +1,3 @@
-using System.Threading.Tasks;
 using FluentAssertions;
 using Xunit;
 using StaticCodeAnalyzer.Analysis;
@@ -9,7 +8,7 @@ namespace StaticCodeAnalyzer.Tests.Analysis
     public class MagicNumbersRuleTests
     {
         [Fact]
-        public async Task AnalyzeAsync_ShouldDetectMagicNumber()
+        public void Analyze_ShouldDetectMagicNumber()
         {
             string code = @"
                 class Test 
@@ -20,14 +19,14 @@ namespace StaticCodeAnalyzer.Tests.Analysis
                     }
                 }";
 
-            List<AnalysisIssue> issues = await TestHelpers.AnalyzeCodeAsync<MagicNumbersRule>(code);
+            List<AnalysisIssue> issues = TestHelpers.AnalyzeCode<MagicNumbersRule>(code);
 
             issues.Should().ContainSingle(i => i.Code == "MAG001");
             issues.First().Description.Should().Contain("42");
         }
 
         [Fact]
-        public async Task AnalyzeAsync_ShouldNotDetectAllowedNumbers()
+        public void Analyze_ShouldNotDetectAllowedNumbers()
         {
             string code = @"
                 class Test 
@@ -42,13 +41,13 @@ namespace StaticCodeAnalyzer.Tests.Analysis
                     }
                 }";
 
-            List<AnalysisIssue> issues = await TestHelpers.AnalyzeCodeAsync<MagicNumbersRule>(code);
+            List<AnalysisIssue> issues = TestHelpers.AnalyzeCode<MagicNumbersRule>(code);
 
             issues.Should().BeEmpty();
         }
 
         [Fact]
-        public async Task AnalyzeAsync_ShouldIgnoreConstDeclarations()
+        public void Analyze_ShouldIgnoreConstDeclarations()
         {
             string code = @"
                 class Test 
@@ -60,7 +59,7 @@ namespace StaticCodeAnalyzer.Tests.Analysis
                     }
                 }";
 
-            List<AnalysisIssue> issues = await TestHelpers.AnalyzeCodeAsync<MagicNumbersRule>(code);
+            List<AnalysisIssue> issues = TestHelpers.AnalyzeCode<MagicNumbersRule>(code);
 
             issues.Should().BeEmpty();
         }

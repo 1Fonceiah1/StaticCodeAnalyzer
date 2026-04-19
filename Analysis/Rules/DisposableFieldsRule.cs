@@ -2,7 +2,6 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading.Tasks;
 using StaticCodeAnalyzer.Models;
 
 namespace StaticCodeAnalyzer.Analysis
@@ -10,7 +9,7 @@ namespace StaticCodeAnalyzer.Analysis
     // Проверяет, что классы, содержащие поля, реализующие IDisposable, сами реализуют IDisposable
     public class DisposableFieldsRule : IAnalyzerRule
     {
-        public Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
+        public List<AnalysisIssue> Analyze(SyntaxNode root, SemanticModel semanticModel, string filePath)
         {
             List<AnalysisIssue> issues = new List<AnalysisIssue>();
             IEnumerable<ClassDeclarationSyntax> classes = root.DescendantNodes().OfType<ClassDeclarationSyntax>();
@@ -56,7 +55,7 @@ namespace StaticCodeAnalyzer.Analysis
                 }
             }
 
-            return Task.FromResult(issues);
+            return issues;
         }
 
         // Проверяет, реализует ли тип IDisposable

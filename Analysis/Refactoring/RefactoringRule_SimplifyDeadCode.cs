@@ -4,8 +4,6 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Editing;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace StaticCodeAnalyzer.Analysis.Refactoring
 {
@@ -13,18 +11,18 @@ namespace StaticCodeAnalyzer.Analysis.Refactoring
     {
         public IEnumerable<string> TargetIssueCodes => new[] { "DEAD001", "SIM001", "DEAD002", "DEAD003", "DEAD004" };
 
-        public async Task<Document> ApplyAsync(Document document, CancellationToken cancellationToken)
+        public Document Apply(Document document)
         {
-            SyntaxNode root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
-            DocumentEditor editor = await DocumentEditor.CreateAsync(document, cancellationToken).ConfigureAwait(false);
+            SyntaxNode root = document.GetSyntaxRootAsync().GetAwaiter().GetResult();
+            DocumentEditor editor = DocumentEditor.CreateAsync(document).GetAwaiter().GetResult();
             bool changed = false;
 
             bool anyChange;
             do
             {
                 anyChange = false;
-                root = await editor.GetChangedDocument().GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
-                editor = await DocumentEditor.CreateAsync(editor.GetChangedDocument(), cancellationToken).ConfigureAwait(false);
+                root = editor.GetChangedDocument().GetSyntaxRootAsync().GetAwaiter().GetResult();
+                editor = DocumentEditor.CreateAsync(editor.GetChangedDocument()).GetAwaiter().GetResult();
 
                 // Упрощает бесполезные арифметические присваивания (x = x + 0 → x)
                 foreach (AssignmentExpressionSyntax assign in root.DescendantNodes().OfType<AssignmentExpressionSyntax>())

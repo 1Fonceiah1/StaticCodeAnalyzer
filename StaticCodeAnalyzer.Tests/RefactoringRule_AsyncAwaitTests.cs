@@ -1,4 +1,3 @@
-using System.Threading.Tasks;
 using FluentAssertions;
 using Xunit;
 using StaticCodeAnalyzer.Analysis.Refactoring;
@@ -9,7 +8,7 @@ namespace StaticCodeAnalyzer.Tests.Refactoring
     public class RefactoringRule_AsyncAwaitTests
     {
         [Fact]
-        public async Task ApplyAsync_ShouldReplaceThreadSleepWithTaskDelay()
+        public void Apply_ShouldReplaceThreadSleepWithTaskDelay()
         {
             // Подготавливает код с Thread.Sleep
             string input = @"
@@ -23,7 +22,7 @@ namespace StaticCodeAnalyzer.Tests.Refactoring
                 }";
 
             // Применяет рефакторинг
-            string result = await TestHelpers.ApplyRefactoringAsync<RefactoringRule_AsyncAwait>(input);
+            string result = TestHelpers.ApplyRefactoring<RefactoringRule_AsyncAwait>(input);
 
             // Проверяет, что Thread.Sleep заменён на await Task.Delay, добавлены async Task и using
             result.Should().Contain("await Task.Delay(1000)");
@@ -32,7 +31,7 @@ namespace StaticCodeAnalyzer.Tests.Refactoring
         }
 
         [Fact]
-        public async Task ApplyAsync_ShouldRemoveUselessAsync()
+        public void Apply_ShouldRemoveUselessAsync()
         {
             // Подготавливает код с async-методом без await
             string input = @"
@@ -45,7 +44,7 @@ namespace StaticCodeAnalyzer.Tests.Refactoring
                 }";
 
             // Применяет рефакторинг
-            string result = await TestHelpers.ApplyRefactoringAsync<RefactoringRule_AsyncAwait>(input);
+            string result = TestHelpers.ApplyRefactoring<RefactoringRule_AsyncAwait>(input);
 
             // Проверяет, что модификатор async удалён, а Task остался
             result.Should().NotContain("async Task");

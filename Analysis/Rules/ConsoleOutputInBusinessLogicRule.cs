@@ -3,7 +3,6 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading.Tasks;
 using StaticCodeAnalyzer.Models;
 
 namespace StaticCodeAnalyzer.Analysis
@@ -17,7 +16,7 @@ namespace StaticCodeAnalyzer.Analysis
             "DisplayOutput", "ShowOutput", "Print", "Log", "WriteToConsole", "Debug"
         };
 
-        public Task<List<AnalysisIssue>> AnalyzeAsync(SyntaxNode root, SemanticModel semanticModel, string filePath)
+        public List<AnalysisIssue> Analyze(SyntaxNode root, SemanticModel semanticModel, string filePath)
         {
             List<AnalysisIssue> issues = new List<AnalysisIssue>();
             IEnumerable<InvocationExpressionSyntax> consoleCalls = root.DescendantNodes()
@@ -54,7 +53,7 @@ namespace StaticCodeAnalyzer.Analysis
                 }
             }
 
-            return Task.FromResult(issues);
+            return issues;
         }
 
         // Определяет, является ли вызов обращением к Console.Write/WriteLine
