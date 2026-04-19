@@ -1,12 +1,10 @@
-using System.Collections.Generic;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Text;
-using System.Linq;
 using StaticCodeAnalyzer.Analysis;
 using StaticCodeAnalyzer.Analysis.Refactoring;
 using StaticCodeAnalyzer.Models;
-using MSProject = Microsoft.CodeAnalysis.Project; // alias для устранения конфликта
+using MSProject = Microsoft.CodeAnalysis.Project;
 
 namespace StaticCodeAnalyzer.Tests
 {

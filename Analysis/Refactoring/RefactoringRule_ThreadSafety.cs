@@ -2,8 +2,6 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Editing;
-using System.Collections.Generic;
-using System.Linq;
 
 namespace StaticCodeAnalyzer.Analysis.Refactoring
 {

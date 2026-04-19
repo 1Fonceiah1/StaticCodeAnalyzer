@@ -1,5 +1,4 @@
 using FluentAssertions;
-using Xunit;
 using StaticCodeAnalyzer.Analysis;
 using StaticCodeAnalyzer.Models;
 

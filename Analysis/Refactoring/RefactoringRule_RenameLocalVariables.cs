@@ -1,8 +1,6 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Rename;
-using System.Collections.Generic;
-using System.Linq;
 
 namespace StaticCodeAnalyzer.Analysis.Refactoring
 {

@@ -1,6 +1,3 @@
-using System;
-using System.Collections.Generic;
-
 namespace StaticCodeAnalyzer.Models
 {
     // Модель проекта (решения или папки с кодом)

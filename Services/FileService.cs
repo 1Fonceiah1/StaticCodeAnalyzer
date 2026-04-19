@@ -1,6 +1,3 @@
-using System.Collections.Generic;
-using System.IO;
-
 namespace StaticCodeAnalyzer.Services
 {
     // Вспомогательный сервис для работы с файлами

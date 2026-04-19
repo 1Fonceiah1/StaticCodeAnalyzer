@@ -1,5 +1,4 @@
 using Microsoft.CodeAnalysis;
-using System.Collections.Generic;
 using StaticCodeAnalyzer.Models;
 
 namespace StaticCodeAnalyzer.Analysis

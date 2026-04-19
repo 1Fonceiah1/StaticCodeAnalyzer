@@ -1,7 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using StaticCodeAnalyzer.Models;
-using System.IO;
 
 namespace StaticCodeAnalyzer.Data
 {

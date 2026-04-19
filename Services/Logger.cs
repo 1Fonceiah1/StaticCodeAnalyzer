@@ -1,7 +1,3 @@
-using System;
-using System.IO;
-using System.Threading;
-
 namespace StaticCodeAnalyzer.Services
 {
     // Статический логгер для записи событий в файлы с ротацией по дням

@@ -1,5 +1,4 @@
 using FluentAssertions;
-using Xunit;
 using StaticCodeAnalyzer.Analysis.Refactoring;
 
 namespace StaticCodeAnalyzer.Tests.Refactoring
