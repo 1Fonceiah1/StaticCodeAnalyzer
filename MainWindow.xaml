@@ -199,7 +199,7 @@
             </Setter>
         </Style>
 
-        <!-- Стиль для ComboBox -->
+        <!-- Исправленный стиль для ComboBox (отображает выбранное значение и белый текст) -->
         <Style TargetType="ComboBox">
             <Setter Property="Background" Value="{StaticResource SecondaryBackground}"/>
             <Setter Property="Foreground" Value="{StaticResource TextColor}"/>
@@ -216,6 +216,7 @@
                                           Background="{TemplateBinding Background}"
                                           BorderBrush="{TemplateBinding BorderBrush}"
                                           BorderThickness="{TemplateBinding BorderThickness}"
+                                          Foreground="{TemplateBinding Foreground}"
                                           Focusable="False"
                                           IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
                                           ClickMode="Press">
@@ -231,7 +232,11 @@
                                                     <ColumnDefinition/>
                                                     <ColumnDefinition Width="20"/>
                                                 </Grid.ColumnDefinitions>
-                                                <ContentPresenter Grid.Column="0" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="3,0,0,0"/>
+                                                <ContentPresenter Grid.Column="0" 
+                                                                  Content="{Binding SelectionBoxItem, RelativeSource={RelativeSource AncestorType=ComboBox}}"
+                                                                  HorizontalAlignment="Left" 
+                                                                  VerticalAlignment="Center" 
+                                                                  Margin="3,0,0,0"/>
                                                 <Path Grid.Column="1" Data="M0,0 L4,4 L8,0" Fill="{StaticResource TextColor}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                             </Grid>
                                         </Border>
