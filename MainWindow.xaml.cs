@@ -185,7 +185,14 @@ namespace StaticCodeAnalyzer
                     MessageBox.Show($"Некоторые правила завершились с ошибками:\n{errorList}", "Ошибки анализа", MessageBoxButton.OK, MessageBoxImage.Warning);
                 }
 
-                SaveAnalysisResultsToDb(issues, _currentPath, _isFolder);
+                try
+                {
+                    SaveAnalysisResultsToDb(issues, filesToAnalyze, allFiles.Where(f => f.IsExcluded).ToList(), _currentPath, _isFolder);
+                }
+                catch (Exception dbEx)
+                {
+                    MessageBox.Show($"Ошибка сохранения в БД: {dbEx.Message}", "Ошибка базы данных", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
 
                 _resultsViewSource.Source = _currentIssues;
                 ResultsGrid.ItemsSource = _resultsViewSource.View;
@@ -218,27 +225,65 @@ namespace StaticCodeAnalyzer
         }
 
         // Сохраняет результаты анализа в базу данных
-        private void SaveAnalysisResultsToDb(List<AnalysisIssue> issues, string path, bool isFolder)
+        private void SaveAnalysisResultsToDb(List<AnalysisIssue> issues, List<string> filesToAnalyze, List<FileTreeNode> excludedFiles, string path, bool isFolder)
         {
             try
             {
+                Logger.Log("DbSave", "Начало сохранения в БД");
+
                 Project project = _repository.GetOrCreateProject(path, isFolder ? Path.GetFileName(path) : Path.GetFileNameWithoutExtension(path));
+                Logger.Log("DbSave", $"Проект получен/создан: ID={project.ProjectId}, Name={project.ProjectName}");
+
+                // Формируем JSON с параметрами сканирования
+                string parametersJson = $"{{\"analysisType\":\"{(isFolder ? "folder" : "file")}\",\"totalFiles\":{filesToAnalyze.Count},\"excludedFiles\":{excludedFiles.Count},\"timestamp\":\"{DateTime.UtcNow:O}\"}}";
+                string logPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "analysis.log");
+
                 Scan scan = new Scan
                 {
                     ProjectId = project.ProjectId,
-                    StartTime = DateTime.Now,
-                    EndTime = DateTime.Now,
+                    StartTime = DateTime.UtcNow,
+                    EndTime = DateTime.UtcNow,
                     UserName = Environment.UserName,
-                    TotalFilesScanned = issues.Select(i => i.FilePath).Distinct().Count(),
+                    Parameters = parametersJson,
+                    ExternalLogPath = logPath,
+                    TotalFilesScanned = filesToAnalyze.Count,
                     TotalIssuesFound = issues.Count
                 };
                 _repository.AddScan(scan);
+                Logger.Log("DbSave", $"Scan добавлен в контекст: ProjectId={scan.ProjectId}, ScanId={scan.ScanId}");
 
+                // Обновляем LastScanned у проекта
+                _repository.UpdateProjectLastScanned(project.ProjectId);
+                Logger.Log("DbSave", "Обновлен LastScanned у проекта");
+
+                // Сохраняем отсканированные файлы
+                Dictionary<string, int> fileIssuesCount = issues.GroupBy(i => i.FilePath).ToDictionary(g => g.Key, g => g.Count());
+                List<ScannedFile> scannedFiles = filesToAnalyze.Select(filePath => new ScannedFile
+                {
+                    ScanId = scan.ScanId,
+                    FilePath = filePath,
+                    FileExtension = Path.GetExtension(filePath),
+                    LinesCount = File.Exists(filePath) ? File.ReadAllLines(filePath).Length : 0,
+                    IssuesCount = fileIssuesCount.ContainsKey(filePath) ? fileIssuesCount[filePath] : 0
+                }).ToList();
+                _repository.AddScannedFiles(scannedFiles);
+                Logger.Log("DbSave", $"Добавлено {scannedFiles.Count} отсканированных файлов");
+
+                // Сохраняем уникальные правила из issues (по коду правила)
+                Dictionary<string, AnalysisRule> rulesCache = new Dictionary<string, AnalysisRule>();
+                foreach (AnalysisIssue issue in issues.Where(i => !string.IsNullOrEmpty(i.Code)).DistinctBy(i => i.Code))
+                {
+                    AnalysisRule rule = _repository.GetOrCreateRule(issue.Code, issue.RuleName ?? "Unknown", "General", issue.Severity, issue.Description ?? $"Rule for {issue.Code}");
+                    rulesCache[issue.Code] = rule;
+                }
+                Logger.Log("DbSave", $"Сохранено {rulesCache.Count} правил");
+
+                // Сохраняем результаты анализа с привязкой к правилам (по коду)
                 List<AnalysisResult> results = issues.Select(i => new AnalysisResult
                 {
                     ScanId = scan.ScanId,
                     ProjectId = project.ProjectId,
-                    RuleId = null,
+                    RuleId = !string.IsNullOrEmpty(i.Code) && rulesCache.ContainsKey(i.Code) ? rulesCache[i.Code].RuleId : null,
                     FilePath = i.FilePath,
                     LineNumber = i.LineNumber,
                     ColumnNumber = i.ColumnNumber,
@@ -247,15 +292,37 @@ namespace StaticCodeAnalyzer
                     IssueCode = i.Code,
                     IssueDescription = i.Description,
                     SuggestedFix = i.Suggestion,
-                    CreatedAt = DateTime.Now
+                    CreatedAt = DateTime.UtcNow
                 }).ToList();
-
                 _repository.AddAnalysisResults(results);
+                Logger.Log("DbSave", $"Добавлено {results.Count} результатов в контекст");
+
+                // Сохраняем исключенные файлы/папки
+                if (excludedFiles.Any())
+                {
+                    List<AnalysisExclusion> exclusions = excludedFiles.Select(f => new AnalysisExclusion
+                    {
+                        ProjectId = project.ProjectId,
+                        ExclusionPattern = f.FullPath,
+                        ExclusionType = f.IsFolder ? "Folder" : "File",
+                        CreatedAt = DateTime.UtcNow
+                    }).ToList();
+                    _repository.AddExclusions(exclusions);
+                    Logger.Log("DbSave", $"Добавлено {exclusions.Count} исключений ({exclusions.Count(e => e.ExclusionType == "Folder")} папок, {exclusions.Count(e => e.ExclusionType == "File")} файлов)");
+                }
+
                 _repository.SaveChanges();
+                Logger.Log("DbSave", "SaveChanges выполнен успешно");
+
+                StatusText.Text = $"Сохранено в БД: проект {project.ProjectName}, скан #{scan.ScanId}, {results.Count} проблем, {scannedFiles.Count} файлов, {rulesCache.Count} правил";
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Ошибка сохранения в БД: {ex.Message}");
+                string errorMsg = $"Ошибка сохранения в БД: {ex.Message}";
+                string innerMsg = ex.InnerException != null ? $"\n\nInner: {ex.InnerException.Message}" : "";
+                Logger.Log("DbSaveError", errorMsg + innerMsg);
+                MessageBox.Show(errorMsg + innerMsg + "\n\n" + ex.StackTrace, "Ошибка базы данных", MessageBoxButton.OK, MessageBoxImage.Error);
+                throw;
             }
         }
 
