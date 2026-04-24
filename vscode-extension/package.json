@@ -1,0 +1,142 @@
+{
+  "name": "static-code-analyzer",
+  "displayName": "Static Code Analyzer",
+  "description": "C# Static Code Analyzer integration for VS Code",
+  "version": "1.0.0",
+  "publisher": "static-code-analyzer",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Linters",
+    "Debuggers"
+  ],
+  "keywords": [
+    "c#",
+    "csharp",
+    "static analysis",
+    "code quality",
+    "refactoring"
+  ],
+  "activationEvents": [
+    "onLanguage:csharp",
+    "workspaceContains:**/*.csproj",
+    "workspaceContains:**/*.sln"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "staticCodeAnalyzer.analyzeWorkspace",
+        "title": "Analyze Workspace",
+        "category": "Static Code Analyzer",
+        "icon": "$(search)"
+      },
+      {
+        "command": "staticCodeAnalyzer.analyzeCurrentFile",
+        "title": "Analyze Current File",
+        "category": "Static Code Analyzer",
+        "icon": "$(file-code)"
+      },
+      {
+        "command": "staticCodeAnalyzer.analyzeSelectedFolder",
+        "title": "Analyze Folder",
+        "category": "Static Code Analyzer",
+        "icon": "$(folder)"
+      },
+      {
+        "command": "staticCodeAnalyzer.clearResults",
+        "title": "Clear Results",
+        "category": "Static Code Analyzer",
+        "icon": "$(clear-all)"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "staticCodeAnalyzer.analyzeWorkspace",
+          "group": "staticCodeAnalyzer@1"
+        },
+        {
+          "command": "staticCodeAnalyzer.analyzeCurrentFile",
+          "group": "staticCodeAnalyzer@2"
+        },
+        {
+          "command": "staticCodeAnalyzer.analyzeSelectedFolder",
+          "group": "staticCodeAnalyzer@3"
+        },
+        {
+          "command": "staticCodeAnalyzer.clearResults",
+          "group": "staticCodeAnalyzer@4"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "staticCodeAnalyzer.analyzeSelectedFolder",
+          "group": "9_staticCodeAnalyzer@1",
+          "when": "explorerResourceIsFolder"
+        },
+        {
+          "command": "staticCodeAnalyzer.analyzeCurrentFile",
+          "group": "9_staticCodeAnalyzer@2",
+          "when": "resourceExtname == .cs"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "staticCodeAnalyzer.analyzeCurrentFile",
+          "group": "9_staticCodeAnalyzer@1",
+          "when": "resourceExtname == .cs"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Static Code Analyzer",
+      "properties": {
+        "staticCodeAnalyzer.executablePath": {
+          "type": "string",
+          "default": "",
+          "description": "Путь к исполняемому файлу анализатора (StaticCodeAnalyzer.exe)"
+        },
+        "staticCodeAnalyzer.severityFilter": {
+          "type": "string",
+          "enum": [
+            "all",
+            "critical",
+            "high",
+            "medium",
+            "low"
+          ],
+          "default": "all",
+          "description": "Фильтр по серьезности проблем"
+        },
+        "staticCodeAnalyzer.runOnSave": {
+          "type": "boolean",
+          "default": false,
+          "description": "Автоматически запускать анализ при сохранении файла"
+        },
+        "staticCodeAnalyzer.autoFixOnSave": {
+          "type": "boolean",
+          "default": false,
+          "description": "Автоматически применять исправления при сохранении"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.14.0",
+    "@typescript-eslint/parser": "^6.14.0",
+    "eslint": "^8.55.0",
+    "typescript": "^5.3.0"
+  }
+}

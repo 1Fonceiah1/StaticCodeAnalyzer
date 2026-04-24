@@ -1,0 +1,16 @@
+.vscode/
+.vscode-test/
+src/
+out/test/
+.gitignore
+.gitattributes
+yarn.lock
+**/*.map
+**/*.ts
+!out/**/*.js
+!out/**/*.map
+tsconfig.json
+.eslintrc.json
+*.vsix
+node_modules/
+*.log
